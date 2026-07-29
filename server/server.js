@@ -1,20 +1,21 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-console.log(process.env.MONGO_URI);
 
 const connectDB = require("./config/db");
+const authRoutes = require("./routes/authRoutes");
+const interviewRoutes = require("./routes/interviewRoutes");
 
 const app = express();
 
-// Connect Database
 connectDB();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Test Route
+app.use("/api/auth", authRoutes);
+app.use("/api/interviews", interviewRoutes);
+
 app.get("/", (req, res) => {
     res.send("API is Running");
 });
