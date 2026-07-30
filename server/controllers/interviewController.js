@@ -1,4 +1,9 @@
+const { generateContent } = require("../services/aiService");
+const {
+    generateInterviewQuestionsPrompt
+} = require("../prompts/interviewPrompts");
 const Interview = require("../models/Interview");
+const ai = require("../services/aiService");
 
 // @desc    Create Interview
 // @route   POST /api/interviews
@@ -128,9 +133,91 @@ const updateInterview = async (req, res) => {
     }
 };
 
+
+const deleteInterview = async (req, res) => {
+    try {
+
+        const interview = await Interview.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found"
+            });
+        }
+
+        await interview.deleteOne();
+
+        res.status(200).json({
+            success: true,
+            message: "Interview deleted successfully"
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+const generateInterviewQuestions = async (req, res) => {
+    try {
+
+        const interview = await Interview.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found"
+            });
+        }
+
+        const prompt = generateInterviewQuestionsPrompt(interview);
+
+        const response = await generateContent(prompt);
+        const cleanedResponse = response
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim();
+
+        const questions = JSON.parse(cleanedResponse);
+
+        console.log(questions);
+        const formattedQuestions = questions.map((question) => ({
+            question,
+            answer: "",
+            feedback: "",
+            score: 0
+        }));
+
+        interview.questions = formattedQuestions;
+        await interview.save();
+        return res.status(200).json({
+            success: true,
+            message: "Interview questions generated successfully",
+            interview
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createInterview,
     getInterviews,
     getInterviewById,
     updateInterview,
+    deleteInterview,
+    generateInterviewQuestions
 };
