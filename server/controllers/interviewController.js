@@ -1,9 +1,12 @@
 const { generateContent } = require("../services/aiService");
 const {
-    generateInterviewQuestionsPrompt
+    generateInterviewQuestionsPrompt,
+    generateEvaluationPrompt,
+    generateSummaryPrompt
 } = require("../prompts/interviewPrompts");
 const Interview = require("../models/Interview");
-const ai = require("../services/aiService");
+const parseGeminiResponse = require("../utils/parseGeminiResponse");
+
 
 // @desc    Create Interview
 // @route   POST /api/interviews
@@ -182,14 +185,17 @@ const generateInterviewQuestions = async (req, res) => {
         const prompt = generateInterviewQuestionsPrompt(interview);
 
         const response = await generateContent(prompt);
-        const cleanedResponse = response
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim();
 
-        const questions = JSON.parse(cleanedResponse);
+        const questions = parseGeminiResponse(response);
 
-        console.log(questions);
+        if (!Array.isArray(questions)) {
+            return res.status(500).json({
+                success: false,
+                message: "Invalid AI response"
+           });
+        }
+
+        
         const formattedQuestions = questions.map((question) => ({
             question,
             answer: "",
@@ -213,11 +219,203 @@ const generateInterviewQuestions = async (req, res) => {
     }
 };
 
+
+// @desc    Submit Answer
+// @route   POST /api/interviews/:id/answer
+// @access  Private
+
+const submitAnswer = async (req, res) => {
+    try {
+
+        const { questionIndex, answer } = req.body;
+
+        // Validation
+        if (questionIndex === undefined || !answer) {
+            return res.status(400).json({
+                success: false,
+                message: "Question index and answer are required"
+            });
+        }
+
+        // Find Interview
+        const interview = await Interview.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found"
+            });
+        }
+
+        // Validate Question Index
+        if (
+            questionIndex < 0 ||
+            questionIndex >= interview.questions.length
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid question index"
+            });
+        }
+
+        // Save User Answer (Not Saved to DB Yet)
+        interview.questions[questionIndex].answer = answer;
+        const prompt = generateEvaluationPrompt(
+            interview.questions[questionIndex].question,
+            answer
+        );
+        const response = await generateContent(prompt);
+
+        const evaluation = parseGeminiResponse(response);
+
+        if (
+            evaluation.score === undefined ||
+            !evaluation.feedback
+        ){
+            return res.status(500).json({
+            success: false,
+            message: "Invalid AI evaluation received"
+            });
+        }
+
+        interview.questions[questionIndex].score =
+            Number(evaluation.score);
+
+        interview.questions[questionIndex].feedback =
+            evaluation.feedback;
+
+        interview.questions[questionIndex].improvement =
+            evaluation.improvement || "";
+
+        await interview.save();
+
+        
+        return res.status(200).json({
+            success: true,
+            message: "Answer evaluated successfully",
+            question: interview.questions[questionIndex]
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// @desc    Complete Interview
+// @route   POST /api/interviews/:id/complete
+// @access  Private
+
+const completeInterview = async (req, res) => {
+    try {
+
+        // Find Interview
+        const interview = await Interview.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found"
+            });
+        }
+
+        // Prevent completing twice
+        if (interview.completed) {
+            return res.status(400).json({
+                success: false,
+                message: "Interview already completed"
+            });
+        }
+
+        // Check if questions exist
+        if (interview.questions.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No interview questions found"
+            });
+        }
+
+        // Make sure every question has been answered
+        const unanswered = interview.questions.some(
+            (question) => !question.answer.trim()
+        );
+
+        if (unanswered) {
+            return res.status(400).json({
+                success: false,
+                message: "Please answer all interview questions before completing the interview."
+            });
+        }
+
+        // Calculate Average Score
+        const totalScore = interview.questions.reduce(
+            (sum, question) => sum + question.score,
+            0
+        );
+
+        const averageScore = totalScore / interview.questions.length;
+
+        // Generate AI Summary Prompt
+        const prompt = generateSummaryPrompt(interview.questions);
+
+        // Ask Gemini
+        const response = await generateContent(prompt);
+
+        // Parse Gemini Response
+        const summary = parseGeminiResponse(response);
+
+        // Validate AI Response
+        if (
+            !summary.summary ||
+            !Array.isArray(summary.strengths) ||
+            !Array.isArray(summary.weaknesses) ||
+            !summary.recommendation
+        ) {
+            return res.status(500).json({
+                success: false,
+                message: "Invalid AI summary received"
+            });
+        }
+
+        // Save Final Report
+        interview.overallScore = Number(averageScore.toFixed(1));
+        interview.summary = summary.summary;
+        interview.strengths = summary.strengths;
+        interview.weaknesses = summary.weaknesses;
+        interview.recommendation = summary.recommendation;
+        interview.completed = true;
+
+        await interview.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Interview completed successfully",
+            interview
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createInterview,
     getInterviews,
     getInterviewById,
     updateInterview,
     deleteInterview,
-    generateInterviewQuestions
+    generateInterviewQuestions,
+    submitAnswer,
+    completeInterview
 };

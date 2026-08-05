@@ -45,15 +45,36 @@ Evaluate the answer and return ONLY JSON in this format:
 };
 
 // Overall interview summary
-const generateSummaryPrompt = (results) => {
+const generateSummaryPrompt = (questions) => {
     return `
-Based on these interview results:
+You are an experienced technical interviewer.
 
-${JSON.stringify(results)}
+Below is the interview result.
 
-Give an overall summary.
+${JSON.stringify(questions, null, 2)}
 
-Return ONLY JSON.
+Analyze the interview.
+
+Return ONLY valid JSON in this format:
+
+{
+    "summary":"Overall performance summary",
+
+    "strengths":[
+        "Strength 1",
+        "Strength 2"
+    ],
+
+    "weaknesses":[
+        "Weakness 1",
+        "Weakness 2"
+    ],
+
+    "recommendation":"Final hiring recommendation"
+}
+
+Do not return markdown.
+Only return JSON.
 `;
 };
 

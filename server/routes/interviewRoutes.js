@@ -8,16 +8,27 @@ const {
     getInterviewById,
     updateInterview,
     deleteInterview,
-    generateInterviewQuestions
+    generateInterviewQuestions,
+    submitAnswer,
+    completeInterview
 } = require("../controllers/interviewController");
 
 const { protect } = require("../middleware/authMiddleware");
 
 router.post("/", protect, createInterview);
+
 router.get("/", protect, getInterviews);
-router.get("/:id", protect, getInterviewById);
-router.put("/:id", protect, updateInterview);
-router.delete("/:id", protect, deleteInterview);
+
 router.post("/:id/generate", protect, generateInterviewQuestions);
+
+router.post("/:id/answer", protect, submitAnswer);
+
+router.post("/:id/complete", protect, completeInterview);
+
+router.get("/:id", protect, getInterviewById);
+
+router.put("/:id", protect, updateInterview);
+
+router.delete("/:id", protect, deleteInterview);
 
 module.exports = router;
