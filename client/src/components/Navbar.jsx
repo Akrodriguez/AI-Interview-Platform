@@ -11,23 +11,45 @@ const Navbar = () => {
     };
 
     return (
-        <nav>
-            <Link to="/">AI Interview Platform</Link>
+        <nav className="navbar">
 
-            {isAuthenticated ? (
-                <div>
-                    <Link to="/dashboard">Dashboard</Link>
+            <Link to="/" className="navbar-brand">
+                AI Interview Platform
+            </Link>
 
-                    <button onClick={handleLogout}>
+            {isAuthenticated && (
+                <div className="navbar-links">
+
+                    <Link to="/dashboard">
+                        Dashboard
+                    </Link>
+
+                    <Link to="/create-interview">
+                        New Interview
+                    </Link>
+
+                    <button
+                        className="logout-btn"
+                        onClick={handleLogout}
+                    >
                         Logout
                     </button>
-                </div>
-            ) : (
-                <div>
-                    <Link to="/login">Login</Link>
-                    <Link to="/register">Register</Link>
+
                 </div>
             )}
+
+            {!isAuthenticated && (
+                <div className="navbar-links">
+                    <Link to="/login">
+                        Login
+                    </Link>
+
+                    <Link to="/register">
+                        Register
+                    </Link>
+                </div>
+            )}
+
         </nav>
     );
 };

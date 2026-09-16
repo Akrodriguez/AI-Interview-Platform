@@ -16,14 +16,12 @@ const Interview = () => {
     const [completing, setCompleting] = useState(false);
 
     const [error, setError] = useState("");
-    const [feedback, setFeedback] = useState(null);
 
     const fetchInterview = async () => {
         try {
             const response = await api.get(`/interviews/${id}`);
 
             setInterview(response.data.interview);
-
         } catch (error) {
             setError(
                 error.response?.data?.message ||
@@ -50,7 +48,6 @@ const Interview = () => {
             setInterview(response.data.interview);
             setCurrentIndex(0);
             setAnswer("");
-            setFeedback(null);
 
         } catch (error) {
             setError(
@@ -64,7 +61,7 @@ const Interview = () => {
 
     const submitAnswer = async () => {
         if (!answer.trim()) {
-            setError("Please enter an answer");
+            setError("Please enter an answer before continuing.");
             return;
         }
 
@@ -72,7 +69,7 @@ const Interview = () => {
             setSubmitting(true);
             setError("");
 
-            const response = await api.post(
+            await api.post(
                 `/interviews/${id}/answer`,
                 {
                     questionIndex: currentIndex,
@@ -80,54 +77,27 @@ const Interview = () => {
                 }
             );
 
-            const updatedQuestion = response.data.question;
+            // Move to next question
+            if (
+                currentIndex <
+                interview.questions.length - 1
+            ) {
+                const nextIndex = currentIndex + 1;
 
-            setFeedback(updatedQuestion);
+                setCurrentIndex(nextIndex);
 
-            setInterview((prev) => {
-                const updatedQuestions = [...prev.questions];
-
-                updatedQuestions[currentIndex] = updatedQuestion;
-
-                return {
-                    ...prev,
-                    questions: updatedQuestions
-                };
-            });
+                setAnswer(
+                    interview.questions[nextIndex].answer || ""
+                );
+            }
 
         } catch (error) {
             setError(
                 error.response?.data?.message ||
-                "Failed to evaluate answer"
+                "Failed to submit answer"
             );
         } finally {
             setSubmitting(false);
-        }
-    };
-
-    const nextQuestion = () => {
-        if (currentIndex < interview.questions.length - 1) {
-            const nextIndex = currentIndex + 1;
-
-            setCurrentIndex(nextIndex);
-            setAnswer(
-                interview.questions[nextIndex].answer || ""
-            );
-            setFeedback(null);
-            setError("");
-        }
-    };
-
-    const previousQuestion = () => {
-        if (currentIndex > 0) {
-            const previousIndex = currentIndex - 1;
-
-            setCurrentIndex(previousIndex);
-            setAnswer(
-                interview.questions[previousIndex].answer || ""
-            );
-            setFeedback(null);
-            setError("");
         }
     };
 
@@ -157,124 +127,238 @@ const Interview = () => {
     };
 
     if (loading) {
-        return <h2>Loading interview...</h2>;
+        return (
+            <div className="page-container">
+                <div className="loading">
+                    Loading interview...
+                </div>
+            </div>
+        );
     }
 
     if (error && !interview) {
-        return <p>{error}</p>;
+        return (
+            <div className="page-container">
+                <div className="error-message">
+                    {error}
+                </div>
+            </div>
+        );
     }
 
     if (!interview) {
-        return <p>Interview not found</p>;
+        return (
+            <div className="page-container">
+                <p>Interview not found.</p>
+            </div>
+        );
     }
 
-    if (!interview.questions || interview.questions.length === 0) {
+    /*
+     * No questions yet
+     */
+    if (
+        !interview.questions ||
+        interview.questions.length === 0
+    ) {
         return (
-            <div>
-                <h1>{interview.role} Interview</h1>
+            <div className="page-container">
 
-                <p>
-                    Experience: {interview.experience} years
-                </p>
+                <div className="interview-intro">
 
-                <p>
-                    Tech Stack:{" "}
-                    {interview.techStack.join(", ")}
-                </p>
+                    <h1>{interview.role} Interview</h1>
 
-                {error && <p>{error}</p>}
+                    <p>
+                        {interview.experience} years experience
+                    </p>
 
-                <button
-                    onClick={generateQuestions}
-                    disabled={generating}
-                >
-                    {generating
-                        ? "Generating Questions..."
-                        : "Generate AI Questions"}
-                </button>
+                    <div className="tech-stack">
+                        {interview.techStack.map(
+                            (tech, index) => (
+                                <span
+                                    className="tech-tag"
+                                    key={index}
+                                >
+                                    {tech}
+                                </span>
+                            )
+                        )}
+                    </div>
+
+                    {interview.description && (
+                        <p>
+                            {interview.description}
+                        </p>
+                    )}
+
+                    {error && (
+                        <div className="error-message">
+                            {error}
+                        </div>
+                    )}
+
+                    <button
+                        className="btn btn-primary"
+                        onClick={generateQuestions}
+                        disabled={generating}
+                    >
+                        {generating
+                            ? "Generating Questions..."
+                            : "Start AI Interview"}
+                    </button>
+
+                </div>
+
             </div>
         );
     }
 
     const question = interview.questions[currentIndex];
 
+    const isLastQuestion =
+        currentIndex === interview.questions.length - 1;
+
+    const progress =
+        ((currentIndex + 1) /
+            interview.questions.length) *
+        100;
+
     return (
-        <div>
-            <h1>{interview.role} Interview</h1>
+        <div className="page-container">
 
-            <p>
-                Question {currentIndex + 1} of{" "}
-                {interview.questions.length}
-            </p>
+            <div className="interview-header">
 
-            <h2>{question.question}</h2>
+                <div>
+                    <h1>{interview.role} Interview</h1>
 
-            <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="Type your answer here..."
-                rows="8"
-                disabled={!!feedback}
-            />
+                    <p>
+                        {interview.techStack.join(" • ")}
+                    </p>
+                </div>
 
-            {error && <p>{error}</p>}
+                <div className="question-counter">
+                    Question {currentIndex + 1} of{" "}
+                    {interview.questions.length}
+                </div>
 
-            {!feedback ? (
+            </div>
+
+            {/* Progress Bar */}
+
+            <div className="progress-container">
+
+                <div
+                    className="progress-bar"
+                    style={{
+                        width: `${progress}%`
+                    }}
+                />
+
+            </div>
+
+            {/* Question */}
+
+            <div className="question-card">
+
+                <span className="question-label">
+                    Question {currentIndex + 1}
+                </span>
+
+                <h2>
+                    {question.question}
+                </h2>
+
+            </div>
+
+            {/* Answer */}
+
+            <div className="answer-section">
+
+                <label>
+                    Your Answer
+                </label>
+
+                <textarea
+                    value={answer}
+                    onChange={(e) =>
+                        setAnswer(e.target.value)
+                    }
+                    placeholder="Type your answer here..."
+                    rows="10"
+                    disabled={submitting || completing}
+                />
+
+            </div>
+
+            {error && (
+                <div className="error-message">
+                    {error}
+                </div>
+            )}
+
+            {/* Action */}
+
+            {!isLastQuestion ? (
+
                 <button
+                    className="btn btn-primary"
                     onClick={submitAnswer}
                     disabled={submitting}
                 >
                     {submitting
-                        ? "Evaluating..."
-                        : "Submit Answer"}
+                        ? "Saving Answer..."
+                        : "Submit & Next"}
                 </button>
+
             ) : (
-                <div>
-                    <h3>AI Evaluation</h3>
 
-                    <p>
-                        <strong>Score:</strong>{" "}
-                        {feedback.score}/10
-                    </p>
+                <button
+                    className="btn btn-primary"
+                    onClick={async () => {
 
-                    <p>
-                        <strong>Feedback:</strong>{" "}
-                        {feedback.feedback}
-                    </p>
+                        if (!answer.trim()) {
+                            setError(
+                                "Please answer the final question."
+                            );
+                            return;
+                        }
 
-                    {feedback.improvement && (
-                        <p>
-                            <strong>Improvement:</strong>{" "}
-                            {feedback.improvement}
-                        </p>
-                    )}
+                        try {
+                            setSubmitting(true);
 
-                    <div>
-                        <button
-                            onClick={previousQuestion}
-                            disabled={currentIndex === 0}
-                        >
-                            Previous
-                        </button>
+                            await api.post(
+                                `/interviews/${id}/answer`,
+                                {
+                                    questionIndex:
+                                        currentIndex,
+                                    answer
+                                }
+                            );
 
-                        {currentIndex <
-                        interview.questions.length - 1 ? (
-                            <button onClick={nextQuestion}>
-                                Next Question
-                            </button>
-                        ) : (
-                            <button
-                                onClick={completeInterview}
-                                disabled={completing}
-                            >
-                                {completing
-                                    ? "Generating Report..."
-                                    : "Complete Interview"}
-                            </button>
-                        )}
-                    </div>
-                </div>
+                            await completeInterview();
+
+                        } catch (error) {
+                            setError(
+                                error.response?.data?.message ||
+                                "Failed to complete interview"
+                            );
+                        } finally {
+                            setSubmitting(false);
+                        }
+
+                    }}
+                    disabled={
+                        submitting ||
+                        completing
+                    }
+                >
+                    {completing
+                        ? "Generating Report..."
+                        : "Finish Interview"}
+                </button>
+
             )}
+
         </div>
     );
 };

@@ -1,32 +1,29 @@
 import { useState } from "react";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import api from "../services/api";
 
 const Login = () => {
+    const navigate = useNavigate();
+    const { login } = useAuth();
+
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-
-    const navigate = useNavigate();
-
-    const { login } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        setError("");
-        setLoading(true);
-
         try {
-            const response = await axios.post(
-                "http://localhost:5000/api/auth/login",
-                {
-                    email,
-                    password
-                }
-            );
+            setLoading(true);
+            setError("");
+
+            const response = await api.post("/auth/login", {
+                email,
+                password
+            });
 
             const token = response.data.token;
 
@@ -37,7 +34,7 @@ const Login = () => {
         } catch (error) {
             setError(
                 error.response?.data?.message ||
-                "Login failed"
+                "Login failed. Please check your credentials."
             );
         } finally {
             setLoading(false);
@@ -45,40 +42,106 @@ const Login = () => {
     };
 
     return (
-        <div>
-            <h1>Login</h1>
+        <div className="auth-page">
 
-            {error && <p>{error}</p>}
+            <div className="auth-card">
 
-            <form onSubmit={handleSubmit}>
+                <div className="auth-header">
 
-                <div>
-                    <label>Email</label>
+                    <div className="auth-logo">
+                        PP
+                    </div>
 
-                    <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                    />
+                    <h1>
+                        Welcome back
+                    </h1>
+
+                    <p>
+                        Login to continue your interview preparation.
+                    </p>
+
                 </div>
 
-                <div>
-                    <label>Password</label>
 
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                    />
+                {error && (
+                    <div className="auth-error">
+                        {error}
+                    </div>
+                )}
+
+
+                <form
+                    className="auth-form"
+                    onSubmit={handleSubmit}
+                >
+
+                    <div className="form-group">
+
+                        <label htmlFor="email">
+                            Email
+                        </label>
+
+                        <input
+                            id="email"
+                            type="email"
+                            placeholder="Enter your email"
+                            value={email}
+                            onChange={(e) =>
+                                setEmail(e.target.value)
+                            }
+                            required
+                        />
+
+                    </div>
+
+
+                    <div className="form-group">
+
+                        <label htmlFor="password">
+                            Password
+                        </label>
+
+                        <input
+                            id="password"
+                            type="password"
+                            placeholder="Enter your password"
+                            value={password}
+                            onChange={(e) =>
+                                setPassword(e.target.value)
+                            }
+                            required
+                        />
+
+                    </div>
+
+
+                    <button
+                        type="submit"
+                        className="auth-submit"
+                        disabled={loading}
+                    >
+                        {loading
+                            ? "Logging in..."
+                            : "Login"}
+                    </button>
+
+                </form>
+
+
+                <div className="auth-footer">
+
+                    <span>
+                        Don't have an account?
+                    </span>
+
+                    <Link to="/register">
+                        Create an account
+                    </Link>
+
                 </div>
 
-                <button type="submit" disabled={loading}>
-                    {loading ? "Logging in..." : "Login"}
-                </button>
+            </div>
 
-            </form>
         </div>
     );
 };

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../services/api";
 
 const CreateInterview = () => {
@@ -17,16 +17,24 @@ const CreateInterview = () => {
         e.preventDefault();
 
         setError("");
-        setLoading(true);
+
+        const technologies = techStack
+            .split(",")
+            .map((tech) => tech.trim())
+            .filter((tech) => tech !== "");
+
+        if (technologies.length === 0) {
+            setError("Please enter at least one technology.");
+            return;
+        }
 
         try {
+            setLoading(true);
+
             const response = await api.post("/interviews", {
                 role,
                 experience: Number(experience),
-                techStack: techStack
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter((item) => item !== ""),
+                techStack: technologies,
                 description
             });
 
@@ -45,69 +53,137 @@ const CreateInterview = () => {
     };
 
     return (
-        <div>
-            <h1>Create Interview</h1>
+        <div className="page-container">
 
-            {error && <p>{error}</p>}
-
-            <form onSubmit={handleSubmit}>
-
+            <div className="page-header">
                 <div>
-                    <label>Role</label>
+                    <h1>Create Interview</h1>
 
-                    <input
-                        type="text"
-                        placeholder="e.g. Backend Developer"
-                        value={role}
-                        onChange={(e) => setRole(e.target.value)}
-                        required
-                    />
+                    <p>
+                        Configure an AI-powered interview based
+                        on your experience and tech stack.
+                    </p>
                 </div>
 
-                <div>
-                    <label>Experience</label>
+                <Link
+                    to="/dashboard"
+                    className="btn btn-secondary"
+                >
+                    ← Dashboard
+                </Link>
+            </div>
 
-                    <input
-                        type="number"
-                        min="0"
-                        placeholder="e.g. 2"
-                        value={experience}
-                        onChange={(e) => setExperience(e.target.value)}
-                        required
-                    />
+            <div className="form-container">
+
+                <div className="form-card">
+
+                    {error && (
+                        <div className="error-message">
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit}>
+
+                        <div className="form-group">
+                            <label htmlFor="role">
+                                Job Role
+                            </label>
+
+                            <input
+                                id="role"
+                                type="text"
+                                placeholder="e.g. Software Engineer"
+                                value={role}
+                                onChange={(e) =>
+                                    setRole(e.target.value)
+                                }
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="experience">
+                                Years of Experience
+                            </label>
+
+                            <input
+                                id="experience"
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="e.g. 2"
+                                value={experience}
+                                onChange={(e) =>
+                                    setExperience(e.target.value)
+                                }
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="techStack">
+                                Tech Stack
+                            </label>
+
+                            <input
+                                id="techStack"
+                                type="text"
+                                placeholder="React, Node.js, MongoDB, JavaScript"
+                                value={techStack}
+                                onChange={(e) =>
+                                    setTechStack(e.target.value)
+                                }
+                                required
+                            />
+
+                            <span className="form-hint">
+                                Separate technologies using commas.
+                            </span>
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="description">
+                                Interview Description
+                            </label>
+
+                            <textarea
+                                id="description"
+                                placeholder="Describe what you want to focus on..."
+                                value={description}
+                                onChange={(e) =>
+                                    setDescription(e.target.value)
+                                }
+                            />
+                        </div>
+
+                        <div className="form-actions">
+
+                            <button
+                                type="submit"
+                                className="btn btn-primary"
+                                disabled={loading}
+                            >
+                                {loading
+                                    ? "Creating..."
+                                    : "Create Interview"}
+                            </button>
+
+                            <Link
+                                to="/dashboard"
+                                className="btn btn-secondary"
+                            >
+                                Cancel
+                            </Link>
+
+                        </div>
+
+                    </form>
+
                 </div>
 
-                <div>
-                    <label>Tech Stack</label>
+            </div>
 
-                    <input
-                        type="text"
-                        placeholder="Node.js, Express, MongoDB, JWT"
-                        value={techStack}
-                        onChange={(e) => setTechStack(e.target.value)}
-                        required
-                    />
-
-                    <small>
-                        Separate technologies using commas
-                    </small>
-                </div>
-
-                <div>
-                    <label>Description</label>
-
-                    <textarea
-                        placeholder="Describe the interview..."
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                    />
-                </div>
-
-                <button type="submit" disabled={loading}>
-                    {loading ? "Creating..." : "Create Interview"}
-                </button>
-
-            </form>
         </div>
     );
 };

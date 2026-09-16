@@ -27,47 +27,112 @@ const Dashboard = () => {
     }, []);
 
     if (loading) {
-        return <h2>Loading interviews...</h2>;
-    }
-
-    if (error) {
-        return <p>{error}</p>;
+        return (
+            <div className="page-container">
+                <div className="loading">
+                    Loading your interviews...
+                </div>
+            </div>
+        );
     }
 
     return (
-        <div>
-            <h1>Dashboard</h1>
+        <div className="page-container">
 
-            <Link to="/create-interview">
-                <button>Create Interview</button>
-            </Link>
+            <div className="page-header">
+                <div>
+                    <h1>Dashboard</h1>
 
-            <h2>Your Interviews</h2>
+                    <p>
+                        Practice, evaluate and improve your
+                        interview skills.
+                    </p>
+                </div>
+
+                <Link
+                    to="/create-interview"
+                    className="btn btn-primary"
+                >
+                    + Create Interview
+                </Link>
+            </div>
+
+            {error && (
+                <div className="error-message">
+                    {error}
+                </div>
+            )}
 
             {interviews.length === 0 ? (
-                <p>No interviews created yet.</p>
+
+                <div className="empty-state">
+
+                    <h3>No interviews yet</h3>
+
+                    <p>
+                        Create your first AI-powered interview
+                        and start practicing.
+                    </p>
+
+                    <Link
+                        to="/create-interview"
+                        className="btn btn-primary"
+                    >
+                        Create Your First Interview
+                    </Link>
+
+                </div>
+
             ) : (
-                interviews.map((interview) => (
-                    <div key={interview._id}>
-                        <h3>{interview.role}</h3>
 
-                        <p>
-                            Experience: {interview.experience} years
-                        </p>
+                <div className="interview-grid">
 
-                        <p>
-                            Tech Stack:{" "}
-                            {interview.techStack.join(", ")}
-                        </p>
+                    {interviews.map((interview) => (
 
-                        <Link
-                            to={`/interview/${interview._id}`}
+                        <div
+                            className="interview-card"
+                            key={interview._id}
                         >
-                            View Interview
-                        </Link>
-                    </div>
-                ))
+
+                            <h3>
+                                {interview.role}
+                            </h3>
+
+                            <p>
+                                {interview.experience} years
+                                experience
+                            </p>
+
+                            <div className="tech-stack">
+
+                                {interview.techStack.map(
+                                    (tech, index) => (
+                                        <span
+                                            className="tech-tag"
+                                            key={index}
+                                        >
+                                            {tech}
+                                        </span>
+                                    )
+                                )}
+
+                            </div>
+
+                            <Link
+                                to={`/interview/${interview._id}`}
+                                className="card-link"
+                            >
+                                Open Interview →
+                            </Link>
+
+                        </div>
+
+                    ))}
+
+                </div>
+
             )}
+
         </div>
     );
 };
