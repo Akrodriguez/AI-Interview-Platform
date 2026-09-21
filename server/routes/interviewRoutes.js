@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
     createInterview,
+    uploadResume,
     getInterviews,
     getInterviewById,
     updateInterview,
@@ -14,8 +15,11 @@ const {
 } = require("../controllers/interviewController");
 
 const { protect } = require("../middleware/authMiddleware");
+const { handleResumeUpload } = require("../middleware/uploadMiddleware");
 
-router.post("/", protect, createInterview);
+router.post("/", protect, handleResumeUpload, createInterview);
+
+router.post("/upload-resume", protect, handleResumeUpload, uploadResume);
 
 router.get("/", protect, getInterviews);
 

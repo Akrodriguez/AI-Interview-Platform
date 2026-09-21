@@ -1,16 +1,27 @@
 const mongoose = require("mongoose");
+const dns = require("dns");
+
+// Use public DNS servers for MongoDB Atlas SRV resolution
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 const connectDB = async () => {
-    try {
-        console.log("URI:", process.env.MONGO_URI);
+    const mongoURI =
+        process.env.MONGO_URI ||
+        "mongodb://127.0.0.1:27017/ai-interview-platform";
 
-        await mongoose.connect(process.env.MONGO_URI);
+    try {
+        console.log("Attempting MongoDB connection...");
+
+        await mongoose.connect(mongoURI);
 
         console.log("✅ MongoDB Connected");
+        return true;
     } catch (error) {
-        console.log("❌ MongoDB Connection Failed");
+        console.log(
+            "⚠️ MongoDB Connection Failed – continuing without database"
+        );
         console.error(error.message);
-        process.exit(1);
+        return false;
     }
 };
 

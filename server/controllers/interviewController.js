@@ -6,34 +6,102 @@ const {
 } = require("../prompts/interviewPrompts");
 const Interview = require("../models/Interview");
 const parseGeminiResponse = require("../utils/parseGeminiResponse");
+const { extractTextFromResume } = require("../utils/resumeParser");
 
 
-// @desc    Create Interview
+// @desc    Create Interview (Manual or Resume-based)
 // @route   POST /api/interviews
 // @access  Private
 const createInterview = async (req, res) => {
     try {
-        const { role, experience, techStack, description } = req.body;
+        let { role, experience, techStack, description, interviewType } = req.body;
+        let resumeText = "";
+        let resumeFileName = "";
 
-        // Validation
-        if (!role || experience === undefined || !techStack) {
-            return res.status(400).json({
-                success: false,
-                message: "Please provide all required fields",
-            });
+        // If a resume file is uploaded
+        if (req.file) {
+            interviewType = "resume";
+            resumeFileName = req.file.originalname;
+            resumeText = await extractTextFromResume(
+                req.file.buffer,
+                req.file.mimetype,
+                req.file.originalname
+            );
+
+            // Default role if not provided in form
+            if (!role) {
+                role = "Software Engineer";
+            }
+            // Parse experience if provided
+            experience = experience !== undefined && experience !== "" ? Number(experience) : 0;
+
+            // Format techStack if passed as comma-separated string or array
+            if (typeof techStack === "string") {
+                techStack = techStack.split(",").map((t) => t.trim()).filter(Boolean);
+            } else if (!Array.isArray(techStack)) {
+                techStack = [];
+            }
+        } else {
+            // Manual interview validation
+            interviewType = "manual";
+            if (!role || experience === undefined || !techStack) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide all required fields",
+                });
+            }
+
+            if (typeof techStack === "string") {
+                techStack = techStack.split(",").map((t) => t.trim()).filter(Boolean);
+            }
         }
 
         const interview = await Interview.create({
             user: req.user._id,
             role,
             experience,
-            techStack,
-            description,
+            techStack: Array.isArray(techStack) ? techStack : [],
+            description: description || "",
+            interviewType,
+            resumeText,
+            resumeFileName,
         });
 
         res.status(201).json({
             success: true,
             interview,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// @desc    Upload & parse resume text
+// @route   POST /api/interviews/upload-resume
+// @access  Private
+const uploadResume = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "Please upload a resume file",
+            });
+        }
+
+        const resumeText = await extractTextFromResume(
+            req.file.buffer,
+            req.file.mimetype,
+            req.file.originalname
+        );
+
+        res.status(200).json({
+            success: true,
+            fileName: req.file.originalname,
+            textLength: resumeText.length,
+            resumeText,
         });
     } catch (error) {
         res.status(500).json({
@@ -268,35 +336,53 @@ const submitAnswer = async (req, res) => {
             answer
         );
         const response = await generateContent(prompt);
-
         const evaluation = parseGeminiResponse(response);
 
+        // Validate minimum required AI evaluation fields
         if (
+            !evaluation ||
             evaluation.score === undefined ||
             !evaluation.feedback
-        ){
+        ) {
             return res.status(500).json({
-            success: false,
-            message: "Invalid AI evaluation received"
+                success: false,
+                message: "Invalid AI evaluation received"
             });
         }
 
-        interview.questions[questionIndex].score =
-            Number(evaluation.score);
+        const parseScore = (val) => {
+            const num = Number(val);
+            return !isNaN(num) && num >= 0 && num <= 10 ? num : null;
+        };
 
-        interview.questions[questionIndex].feedback =
-            evaluation.feedback;
+        const parseStringArray = (val) => {
+            if (Array.isArray(val)) {
+                return val.map((item) => String(item).trim()).filter(Boolean);
+            }
+            return [];
+        };
 
-        interview.questions[questionIndex].improvement =
-            evaluation.improvement || "";
+        const currentQuestion = interview.questions[questionIndex];
+
+        currentQuestion.score = parseScore(evaluation.score) ?? 0;
+        currentQuestion.feedback = String(evaluation.feedback || "").trim();
+        currentQuestion.improvement = String(evaluation.improvement || "").trim();
+
+        currentQuestion.technicalAccuracy = parseScore(evaluation.technicalAccuracy);
+        currentQuestion.completeness = parseScore(evaluation.completeness);
+        currentQuestion.clarity = parseScore(evaluation.clarity);
+        currentQuestion.problemSolving = parseScore(evaluation.problemSolving);
+        currentQuestion.practicalUnderstanding = parseScore(evaluation.practicalUnderstanding);
+
+        currentQuestion.strengths = parseStringArray(evaluation.strengths);
+        currentQuestion.weaknesses = parseStringArray(evaluation.weaknesses);
 
         await interview.save();
 
-        
         return res.status(200).json({
             success: true,
             message: "Answer evaluated successfully",
-            question: interview.questions[questionIndex]
+            question: currentQuestion
         });
 
     } catch (error) {
@@ -411,6 +497,7 @@ const completeInterview = async (req, res) => {
 
 module.exports = {
     createInterview,
+    uploadResume,
     getInterviews,
     getInterviewById,
     updateInterview,

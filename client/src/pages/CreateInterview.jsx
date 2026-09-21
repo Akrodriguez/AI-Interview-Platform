@@ -7,6 +7,7 @@ const CreateInterview = () => {
     const [experience, setExperience] = useState("");
     const [techStack, setTechStack] = useState("");
     const [description, setDescription] = useState("");
+    const [resumeFile, setResumeFile] = useState(null);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -31,12 +32,28 @@ const CreateInterview = () => {
         try {
             setLoading(true);
 
-            const response = await api.post("/interviews", {
-                role,
-                experience: Number(experience),
-                techStack: technologies,
-                description
-            });
+            let response;
+            if (resumeFile) {
+                const formData = new FormData();
+                formData.append("role", role);
+                formData.append("experience", experience);
+                formData.append("techStack", technologies.join(", "));
+                formData.append("description", description);
+                formData.append("resume", resumeFile);
+
+                response = await api.post("/interviews", formData, {
+                    headers: {
+                        "Content-Type": "multipart/form-data",
+                    },
+                });
+            } else {
+                response = await api.post("/interviews", {
+                    role,
+                    experience: Number(experience),
+                    techStack: technologies,
+                    description,
+                });
+            }
 
             const interviewId = response.data.interview._id;
 
@@ -139,6 +156,37 @@ const CreateInterview = () => {
 
                             <span className="form-hint">
                                 Separate technologies using commas.
+                            </span>
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="resume">
+                                Resume (Optional - PDF, DOC, DOCX)
+                            </label>
+
+                            <input
+                                id="resume"
+                                type="file"
+                                accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+                                onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) {
+                                        if (file.size > 5 * 1024 * 1024) {
+                                            setError("Resume file size must not exceed 5MB.");
+                                            e.target.value = "";
+                                            setResumeFile(null);
+                                            return;
+                                        }
+                                        setError("");
+                                        setResumeFile(file);
+                                    } else {
+                                        setResumeFile(null);
+                                    }
+                                }}
+                            />
+
+                            <span className="form-hint">
+                                Attach your resume to generate customized questions targeting your projects and experience.
                             </span>
                         </div>
 

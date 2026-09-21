@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
 
@@ -16,6 +16,53 @@ const Interview = () => {
     const [completing, setCompleting] = useState(false);
 
     const [error, setError] = useState("");
+
+    // Camera state and refs
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+    const [isCameraOn, setIsCameraOn] = useState(false);
+    const [cameraError, setCameraError] = useState("");
+
+    const startCamera = async () => {
+        try {
+            setCameraError("");
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true
+                });
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                }
+                setIsCameraOn(true);
+            } else {
+                setCameraError("Webcam is not supported in this browser.");
+            }
+        } catch (err) {
+            console.error("Camera access error:", err);
+            setCameraError("Camera permission denied or device unavailable.");
+            setIsCameraOn(false);
+        }
+    };
+
+    const stopCamera = () => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setIsCameraOn(false);
+    };
+
+    const toggleCamera = () => {
+        if (isCameraOn) {
+            stopCamera();
+        } else {
+            startCamera();
+        }
+    };
 
     const fetchInterview = async () => {
         try {
@@ -35,6 +82,24 @@ const Interview = () => {
     useEffect(() => {
         fetchInterview();
     }, [id]);
+
+    // Request camera stream when the interview loads and cleanup on page leave
+    useEffect(() => {
+        if (interview) {
+            startCamera();
+        }
+
+        return () => {
+            stopCamera();
+        };
+    }, [interview?._id]);
+
+    // Ensure video element srcObject is attached when camera turns on
+    useEffect(() => {
+        if (isCameraOn && videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+        }
+    }, [isCameraOn]);
 
     const generateQuestions = async () => {
         try {
@@ -109,6 +174,9 @@ const Interview = () => {
             const response = await api.post(
                 `/interviews/${id}/complete`
             );
+
+            // Stop camera before navigation
+            stopCamera();
 
             navigate(`/interview/${id}/result`, {
                 state: {
@@ -256,108 +324,227 @@ const Interview = () => {
 
             </div>
 
-            {/* Question */}
+            <div className="interview-content-grid" style={{
+                display: "grid",
+                gridTemplateColumns: "1fr minmax(260px, 320px)",
+                gap: "24px",
+                alignItems: "start"
+            }}>
 
-            <div className="question-card">
+                {/* Main Question & Answer Column */}
+                <div className="interview-main-col">
 
-                <span className="question-label">
-                    Question {currentIndex + 1}
-                </span>
+                    {/* Question */}
 
-                <h2>
-                    {question.question}
-                </h2>
+                    <div className="question-card">
 
-            </div>
+                        <span className="question-label">
+                            Question {currentIndex + 1}
+                        </span>
 
-            {/* Answer */}
+                        <h2>
+                            {question.question}
+                        </h2>
 
-            <div className="answer-section">
+                    </div>
 
-                <label>
-                    Your Answer
-                </label>
+                    {/* Answer */}
 
-                <textarea
-                    value={answer}
-                    onChange={(e) =>
-                        setAnswer(e.target.value)
-                    }
-                    placeholder="Type your answer here..."
-                    rows="10"
-                    disabled={submitting || completing}
-                />
+                    <div className="answer-section">
 
-            </div>
+                        <label>
+                            Your Answer
+                        </label>
 
-            {error && (
-                <div className="error-message">
-                    {error}
-                </div>
-            )}
+                        <textarea
+                            value={answer}
+                            onChange={(e) =>
+                                setAnswer(e.target.value)
+                            }
+                            placeholder="Type your answer here..."
+                            rows="10"
+                            disabled={submitting || completing}
+                        />
 
-            {/* Action */}
+                    </div>
 
-            {!isLastQuestion ? (
+                    {error && (
+                        <div className="error-message">
+                            {error}
+                        </div>
+                    )}
 
-                <button
-                    className="btn btn-primary"
-                    onClick={submitAnswer}
-                    disabled={submitting}
-                >
-                    {submitting
-                        ? "Saving Answer..."
-                        : "Submit & Next"}
-                </button>
+                    {/* Action */}
 
-            ) : (
+                    {!isLastQuestion ? (
 
-                <button
-                    className="btn btn-primary"
-                    onClick={async () => {
+                        <button
+                            className="btn btn-primary"
+                            onClick={submitAnswer}
+                            disabled={submitting}
+                        >
+                            {submitting
+                                ? "Saving Answer..."
+                                : "Submit & Next"}
+                        </button>
 
-                        if (!answer.trim()) {
-                            setError(
-                                "Please answer the final question."
-                            );
-                            return;
-                        }
+                    ) : (
 
-                        try {
-                            setSubmitting(true);
+                        <button
+                            className="btn btn-primary"
+                            onClick={async () => {
 
-                            await api.post(
-                                `/interviews/${id}/answer`,
-                                {
-                                    questionIndex:
-                                        currentIndex,
-                                    answer
+                                if (!answer.trim()) {
+                                    setError(
+                                        "Please answer the final question."
+                                    );
+                                    return;
                                 }
-                            );
 
-                            await completeInterview();
+                                try {
+                                    setSubmitting(true);
 
-                        } catch (error) {
-                            setError(
-                                error.response?.data?.message ||
-                                "Failed to complete interview"
-                            );
-                        } finally {
-                            setSubmitting(false);
-                        }
+                                    await api.post(
+                                        `/interviews/${id}/answer`,
+                                        {
+                                            questionIndex:
+                                                currentIndex,
+                                            answer
+                                        }
+                                    );
 
-                    }}
-                    disabled={
-                        submitting ||
-                        completing
-                    }
-                >
-                    {completing
-                        ? "Generating Report..."
-                        : "Finish Interview"}
-                </button>
+                                    await completeInterview();
 
-            )}
+                                } catch (error) {
+                                    setError(
+                                        error.response?.data?.message ||
+                                        "Failed to complete interview"
+                                    );
+                                } finally {
+                                    setSubmitting(false);
+                                }
+
+                            }}
+                            disabled={
+                                submitting ||
+                                completing
+                            }
+                        >
+                            {completing
+                                ? "Generating Report..."
+                                : "Finish Interview"}
+                        </button>
+
+                    )}
+
+                </div>
+
+                {/* Live Video / Webcam Panel */}
+                <div className="interview-camera-col">
+
+                    <div className="camera-card" style={{
+                        background: "#ffffff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "12px",
+                        padding: "16px",
+                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)"
+                    }}>
+
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "12px"
+                        }}>
+                            <span style={{
+                                fontSize: "13px",
+                                fontWeight: "700",
+                                color: "#475467",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px"
+                            }}>
+                                Live Webcam
+                            </span>
+
+                            <span style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: isCameraOn ? "#16a34a" : "#dc2626"
+                            }}>
+                                <span style={{
+                                    width: "8px",
+                                    height: "8px",
+                                    borderRadius: "50%",
+                                    background: isCameraOn ? "#16a34a" : "#dc2626",
+                                    display: "inline-block"
+                                }} />
+                                {isCameraOn ? "Active" : "Off"}
+                            </span>
+                        </div>
+
+                        <div style={{
+                            width: "100%",
+                            height: "200px",
+                            background: "#0f172a",
+                            borderRadius: "8px",
+                            overflow: "hidden",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            position: "relative"
+                        }}>
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                    display: isCameraOn ? "block" : "none",
+                                    transform: "scaleX(-1)"
+                                }}
+                            />
+
+                            {!isCameraOn && (
+                                <div style={{
+                                    color: "#94a3b8",
+                                    fontSize: "13px",
+                                    textAlign: "center",
+                                    padding: "14px"
+                                }}>
+                                    {cameraError ? cameraError : "Camera is turned off"}
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={toggleCamera}
+                            className={`btn ${isCameraOn ? "btn-secondary" : "btn-primary"}`}
+                            style={{
+                                width: "100%",
+                                marginTop: "12px",
+                                fontSize: "13px",
+                                padding: "9px 14px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "6px"
+                            }}
+                        >
+                            {isCameraOn ? "Turn Camera Off" : "Turn Camera On"}
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
 
         </div>
     );

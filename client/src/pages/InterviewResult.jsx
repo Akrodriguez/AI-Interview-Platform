@@ -301,76 +301,178 @@ const InterviewResult = () => {
                 <div className="result-questions">
 
                     {interview.questions?.map(
-                        (question, index) => (
+                        (question, index) => {
+                            const hasCriteriaScores =
+                                question.technicalAccuracy != null ||
+                                question.completeness != null ||
+                                question.clarity != null ||
+                                question.problemSolving != null ||
+                                question.practicalUnderstanding != null;
 
-                            <div
-                                className="result-question-card"
-                                key={index}
-                            >
+                            const hasStrengths =
+                                Array.isArray(question.strengths) &&
+                                question.strengths.length > 0;
 
-                                <div className="question-result-header">
+                            const hasWeaknesses =
+                                Array.isArray(question.weaknesses) &&
+                                question.weaknesses.length > 0;
 
-                                    <div>
-                                        <span className="question-number">
-                                            Question {index + 1}
-                                        </span>
+                            return (
+                                <div
+                                    className="result-question-card"
+                                    key={index}
+                                >
 
-                                        <h3>
-                                            {question.question}
-                                        </h3>
+                                    <div className="question-result-header">
+
+                                        <div>
+                                            <span className="question-number">
+                                                Question {index + 1}
+                                            </span>
+
+                                            <h3>
+                                                {question.question}
+                                            </h3>
+                                        </div>
+
+                                        <div className="question-score">
+                                            {question.score ?? 0}/10
+                                        </div>
+
                                     </div>
 
-                                    <div className="question-score">
-                                        {question.score ?? 0}/10
+                                    {/* Structured Evaluation Criteria Scores */}
+                                    {hasCriteriaScores && (
+                                        <div
+                                            className="criteria-scores-container"
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                                                gap: "12px",
+                                                margin: "18px 0",
+                                                padding: "14px",
+                                                background: "#f8fafc",
+                                                borderRadius: "10px",
+                                                border: "1px solid #edf0f5"
+                                            }}
+                                        >
+                                            {question.technicalAccuracy != null && (
+                                                <div style={{ textAlign: "center" }}>
+                                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#667085", display: "block", textTransform: "uppercase", letterSpacing: "0.5px" }}>Technical</span>
+                                                    <strong style={{ fontSize: "16px", color: "#172033" }}>{question.technicalAccuracy}/10</strong>
+                                                </div>
+                                            )}
+
+                                            {question.completeness != null && (
+                                                <div style={{ textAlign: "center" }}>
+                                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#667085", display: "block", textTransform: "uppercase", letterSpacing: "0.5px" }}>Completeness</span>
+                                                    <strong style={{ fontSize: "16px", color: "#172033" }}>{question.completeness}/10</strong>
+                                                </div>
+                                            )}
+
+                                            {question.clarity != null && (
+                                                <div style={{ textAlign: "center" }}>
+                                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#667085", display: "block", textTransform: "uppercase", letterSpacing: "0.5px" }}>Clarity</span>
+                                                    <strong style={{ fontSize: "16px", color: "#172033" }}>{question.clarity}/10</strong>
+                                                </div>
+                                            )}
+
+                                            {question.problemSolving != null && (
+                                                <div style={{ textAlign: "center" }}>
+                                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#667085", display: "block", textTransform: "uppercase", letterSpacing: "0.5px" }}>Problem Solving</span>
+                                                    <strong style={{ fontSize: "16px", color: "#172033" }}>{question.problemSolving}/10</strong>
+                                                </div>
+                                            )}
+
+                                            {question.practicalUnderstanding != null && (
+                                                <div style={{ textAlign: "center" }}>
+                                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#667085", display: "block", textTransform: "uppercase", letterSpacing: "0.5px" }}>Practical</span>
+                                                    <strong style={{ fontSize: "16px", color: "#172033" }}>{question.practicalUnderstanding}/10</strong>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="answer-block">
+
+                                        <p className="answer-label">
+                                            YOUR ANSWER
+                                        </p>
+
+                                        <p>
+                                            {question.answer ||
+                                                "No answer provided."}
+                                        </p>
+
+                                    </div>
+
+                                    <div className="feedback-block">
+
+                                        <p className="answer-label">
+                                            AI FEEDBACK
+                                        </p>
+
+                                        <p>
+                                            {question.feedback ||
+                                                "No feedback available."}
+                                        </p>
+
+                                    </div>
+
+                                    {/* Question Specific Strengths */}
+                                    {hasStrengths && (
+                                        <div className="feedback-block">
+
+                                            <p className="answer-label">
+                                                KEY STRENGTHS
+                                            </p>
+
+                                            <ul style={{ paddingLeft: "20px", margin: "4px 0 0 0", color: "#475467", lineHeight: "1.7" }}>
+                                                {question.strengths.map((item, sIndex) => (
+                                                    <li key={sIndex}>
+                                                        {item}
+                                                    </li>
+                                                ))}
+                                            </ul>
+
+                                        </div>
+                                    )}
+
+                                    {/* Question Specific Weaknesses */}
+                                    {hasWeaknesses && (
+                                        <div className="feedback-block">
+
+                                            <p className="answer-label">
+                                                AREAS FOR IMPROVEMENT
+                                            </p>
+
+                                            <ul style={{ paddingLeft: "20px", margin: "4px 0 0 0", color: "#475467", lineHeight: "1.7" }}>
+                                                {question.weaknesses.map((item, wIndex) => (
+                                                    <li key={wIndex}>
+                                                        {item}
+                                                    </li>
+                                                ))}
+                                            </ul>
+
+                                        </div>
+                                    )}
+
+                                    <div className="improvement-block">
+
+                                        <p className="answer-label">
+                                            HOW TO IMPROVE
+                                        </p>
+
+                                        <p>
+                                            {question.improvement ||
+                                                "No improvement suggestion available."}
+                                        </p>
+
                                     </div>
 
                                 </div>
-
-
-                                <div className="answer-block">
-
-                                    <p className="answer-label">
-                                        YOUR ANSWER
-                                    </p>
-
-                                    <p>
-                                        {question.answer ||
-                                            "No answer provided."}
-                                    </p>
-
-                                </div>
-
-
-                                <div className="feedback-block">
-
-                                    <p className="answer-label">
-                                        AI FEEDBACK
-                                    </p>
-
-                                    <p>
-                                        {question.feedback ||
-                                            "No feedback available."}
-                                    </p>
-
-                                </div>
-
-
-                                <div className="improvement-block">
-
-                                    <p className="answer-label">
-                                        HOW TO IMPROVE
-                                    </p>
-
-                                    <p>
-                                        {question.improvement ||
-                                            "No improvement suggestion available."}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                        )
+                            );
+                        }
                     )}
 
                 </div>
