@@ -1,13 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 import api from "../services/api";
 
 const FACE_NO_FACE_ALERT_MS = 5000;
 
-const getCurrentTime = () => getCurrentTime();
-const getPerformanceTime = () => getPerformanceTime();
+const getCurrentTime = () => Date.now();
+const getPerformanceTime = () => performance.now();
+
 
 const Interview = () => {
     const { id } = useParams();
@@ -20,6 +21,7 @@ const Interview = () => {
     const activeIssueRef = useRef(null);
     const proctoringBufferRef = useRef([]);
     const monitorLoopRef = useRef(null);
+    const monitorFaceRef = useRef(null);
 
     const [interview, setInterview] = useState(null);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -149,7 +151,7 @@ const Interview = () => {
         recognition.start();
     };
 
-    const addProctoringEvent = (eventType, details = "", duration = 0) => {
+    const addProctoringEvent = useCallback((eventType, details = "", duration = 0) => {
         const event = {
             eventType,
             details,
@@ -168,9 +170,9 @@ const Interview = () => {
             });
             proctoringBufferRef.current = [];
         }
-    };
+    }, [id]);
 
-    const stopCamera = () => {
+    const stopCamera = useCallback(() => {
         const wasEnabled = Boolean(streamRef.current);
 
         if (monitorLoopRef.current) {
@@ -196,9 +198,9 @@ const Interview = () => {
         if (wasEnabled) {
             addProctoringEvent("camera_disabled", "Camera turned off during interview.");
         }
-    };
+    }, [addProctoringEvent]);
 
-    const setupFaceDetector = async () => {
+    const setupFaceDetector = useCallback(async () => {
         if (detectorRef.current) {
             return;
         }
@@ -216,9 +218,9 @@ const Interview = () => {
             minDetectionConfidence: 0.5,
             minSuppressionThreshold: 0.3,
         });
-    };
+    }, []);
 
-    const startCamera = async () => {
+    const startCamera = useCallback(async () => {
         try {
             setCameraError("");
             setCameraStatus("Starting camera...");
@@ -256,73 +258,89 @@ const Interview = () => {
                 setCameraError(error.message || "Unable to access the camera.");
             }
         }
-    };
+    }, [setupFaceDetector, addProctoringEvent]);
 
-    const monitorFace = async () => {
-        if (!videoRef.current || !detectorRef.current || !cameraEnabled) {
-            return;
-        }
+    const monitorFace = useCallback(async () => {
+    if (!videoRef.current || !detectorRef.current || !cameraEnabled) {
+        return;
+    }
 
-        const video = videoRef.current;
+    const video = videoRef.current;
 
-        if (video.readyState >= 2) {
-            const detectionResult = detectorRef.current.detectForVideo(video, getPerformanceTime());
-            const detectionCount = detectionResult?.detections?.length || 0;
-            setFaceCount(detectionCount);
+    if (video.readyState >= 2) {
+        const detectionResult = detectorRef.current.detectForVideo(
+            video,
+            getPerformanceTime()
+        );
 
-            if (detectionCount > 1) {
-                faceLossStartRef.current = null;
-                noFaceAlertedRef.current = false;
-                if (!multipleFacesAlertedRef.current) {
-                    multipleFacesStartRef.current = getCurrentTime();
-                    activeIssueRef.current = "multiple_faces";
-                    multipleFacesAlertedRef.current = true;
-                    setFaceStatus("Multiple faces detected");
-                    setAlertMessage("Multiple faces detected. Please ensure you are interviewing alone.");
-                    addProctoringEvent("multiple_faces", "More than one face detected in the camera frame.");
-                }
-            } else if (detectionCount === 0) {
-                if (!faceLossStartRef.current) {
-                    faceLossStartRef.current = getCurrentTime();
-                    activeIssueRef.current = "face_not_detected";
-                    setFaceStatus("No face detected");
-                    setAlertMessage("Face not detected. Please stay in front of the camera.");
-                }
+        const detectionCount = detectionResult?.detections?.length || 0;
+        setFaceCount(detectionCount);
 
-                const elapsed = getCurrentTime() - faceLossStartRef.current;
-                if (elapsed >= FACE_NO_FACE_ALERT_MS && !noFaceAlertedRef.current) {
-                    noFaceAlertedRef.current = true;
-                    addProctoringEvent("face_not_detected", `No face detected for ${elapsed} ms.`, elapsed);
-                }
-            } else {
-                if (activeIssueRef.current === "face_not_detected") {
-                    const duration = getCurrentTime() - (faceLossStartRef.current || getCurrentTime());
-                    if (noFaceAlertedRef.current && duration >= FACE_NO_FACE_ALERT_MS) {
-                        addProctoringEvent("face_not_detected", "Face returned after a no-face event.", duration);
-                    }
-                    noFaceAlertedRef.current = false;
-                    faceLossStartRef.current = null;
-                }
+        if (detectionCount > 1) {
+            faceLossStartRef.current = null;
+            noFaceAlertedRef.current = false;
 
-                if (activeIssueRef.current === "multiple_faces") {
-                    const duration = getCurrentTime() - (multipleFacesStartRef.current || getCurrentTime());
-                    if (multipleFacesAlertedRef.current) {
-                        addProctoringEvent("multiple_faces", "Multiple-face condition ended.", duration);
-                    }
-                    multipleFacesAlertedRef.current = false;
-                    multipleFacesStartRef.current = null;
-                }
-
-                activeIssueRef.current = null;
-                setFaceStatus("Face detected");
-                setAlertMessage("");
+            if (!multipleFacesAlertedRef.current) {
+                multipleFacesStartRef.current = getCurrentTime();
+                activeIssueRef.current = "multiple_faces";
+                multipleFacesAlertedRef.current = true;
+                setFaceStatus("Multiple faces detected");
+                setAlertMessage("Multiple faces detected. Please ensure you are interviewing alone.");
+                addProctoringEvent("multiple_faces", "More than one face detected in the camera frame.");
             }
+        } else if (detectionCount === 0) {
+            if (!faceLossStartRef.current) {
+                faceLossStartRef.current = getCurrentTime();
+                activeIssueRef.current = "face_not_detected";
+                setFaceStatus("No face detected");
+                setAlertMessage("Face not detected. Please stay in front of the camera.");
+            }
+
+            const elapsed = getCurrentTime() - faceLossStartRef.current;
+
+            if (elapsed >= FACE_NO_FACE_ALERT_MS && !noFaceAlertedRef.current) {
+                noFaceAlertedRef.current = true;
+                addProctoringEvent("face_not_detected", `No face detected for ${elapsed} ms.`, elapsed);
+            }
+        } else {
+            if (activeIssueRef.current === "face_not_detected") {
+                const duration = getCurrentTime() - (faceLossStartRef.current || getCurrentTime());
+
+                if (noFaceAlertedRef.current && duration >= FACE_NO_FACE_ALERT_MS) {
+                    addProctoringEvent("face_not_detected", "Face returned after a no-face event.", duration);
+                }
+
+                noFaceAlertedRef.current = false;
+                faceLossStartRef.current = null;
+            }
+
+            if (activeIssueRef.current === "multiple_faces") {
+                const duration = getCurrentTime() - (multipleFacesStartRef.current || getCurrentTime());
+
+                if (multipleFacesAlertedRef.current) {
+                    addProctoringEvent("multiple_faces", "Multiple-face condition ended.", duration);
+                }
+
+                multipleFacesAlertedRef.current = false;
+                multipleFacesStartRef.current = null;
+            }
+
+            activeIssueRef.current = null;
+            setFaceStatus("Face detected");
+            setAlertMessage("");
         }
+    }
 
-        monitorLoopRef.current = requestAnimationFrame(monitorFace);
-    };
+    monitorLoopRef.current = requestAnimationFrame(() => {
+        monitorFaceRef.current?.();
+    });
+}, [cameraEnabled, addProctoringEvent]);
 
-    const fetchInterview = async () => {
+useEffect(() => {
+    monitorFaceRef.current = monitorFace;
+}, [monitorFace]);
+
+    const fetchInterview = useCallback(async () => {
         try {
             const response = await api.get(`/interviews/${id}`);
 
@@ -335,11 +353,11 @@ const Interview = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [id]);
 
     useEffect(() => {
         fetchInterview();
-    }, [id]);
+    }, [fetchInterview]);
 
 
     // Request camera stream when the interview loads and cleanup on page leave
@@ -371,7 +389,7 @@ const Interview = () => {
                 recognitionRef.current = null;
             }
         };
-    }, [interview?._id, interview?.questions?.length]);
+    }, [interview?._id, interview?.questions?.length, startCamera, stopCamera]);
 
     // Keep the video element connected to the current camera stream.
     useEffect(() => {
@@ -395,7 +413,7 @@ const Interview = () => {
                 monitorLoopRef.current = null;
             }
         };
-    }, [cameraEnabled]);
+    }, [cameraEnabled, monitorFace]);
 
     // Reset tab-switch warnings when a new interview loads
     useEffect(() => {
@@ -421,7 +439,7 @@ const Interview = () => {
         return () => {
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
-    }, [interview?._id, interview?.questions?.length]);
+    }, [interview?._id, interview?.questions]);
 
     const generateQuestions = async () => {
         try {
