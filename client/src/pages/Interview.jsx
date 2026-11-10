@@ -130,16 +130,27 @@ const Interview = () => {
         };
 
         recognition.onerror = (event) => {
-            const errorMessage = event.error === "not-allowed"
-                ? "Microphone access was denied. Please allow microphone permission and try again."
-                : event.error === "no-speech"
-                    ? "No speech was detected. Please try again."
-                    : "Voice recognition encountered an issue. Please try again.";
+        console.error("Speech Recognition Error:", event.error);
+        console.error("Speech Recognition Event:", event);
 
-            setVoiceError(errorMessage);
-            setVoiceStatus("Voice input unavailable");
-            setIsListening(false);
+        const errorMessages = {
+            "not-allowed": "Microphone access denied. Check browser permissions.",
+            "service-not-allowed": "Speech recognition service is blocked.",
+            "no-speech": "No speech detected. Please try again.",
+            "audio-capture": "No microphone detected or microphone unavailable.",
+            "network": "Network error in speech recognition service.",
+            "aborted": "Speech recognition was interrupted.",
+            "language-not-supported": "Selected language is not supported."
         };
+
+        setVoiceError(
+            errorMessages[event.error] ||
+            `Speech recognition error: ${event.error}`
+        );
+
+        setVoiceStatus("Voice input unavailable");
+        setIsListening(false);
+    };
 
         recognition.onend = () => {
             setIsListening(false);

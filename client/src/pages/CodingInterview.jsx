@@ -19,26 +19,61 @@ const MONACO_LANGUAGE = {
     cpp: "cpp",
 };
 
+// Default starter codes if not provided by problem
+const STARTER_CODES = {
+    python: `def solution():
+    # Write your solution here
+    pass
+
+solution()
+`,
+    javascript: `function solution() {
+    // Write your solution here
+}
+
+solution();
+`,
+    cpp: `#include <iostream>
+using namespace std;
+
+int main() {
+    // Write your solution here
+    return 0;
+}
+`,
+};
+
 const CodingInterview = () => {
     const { id } = useParams();
     const navigate = useNavigate();
 
     const [codingInterview, setCodingInterview] = useState(null);
     const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
+    const [selectedLanguage, setSelectedLanguage] = useState("python");
     const [code, setCode] = useState("");
+    const [customInput, setCustomInput] = useState("");
 
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [running, setRunning] = useState(false);
+    const [submittingSolution, setSubmittingSolution] = useState(false);
     const [completing, setCompleting] = useState(false);
 
     const [error, setError] = useState("");
     const [saveStatus, setSaveStatus] = useState(""); // "saved" | "saving" | ""
+    const [submitSuccess, setSubmitSuccess] = useState(false);
+
+    // Terminal execution result
+    const [runResult, setRunResult] = useState(null);
+    const [executionError, setExecutionError] = useState("");
 
     // Auto-save timer ref
     const autoSaveTimerRef = useRef(null);
-    // Track whether current code has unsaved changes
     const isDirtyRef = useRef(false);
+
+    // Code cache across problems and languages: key `${probIndex}_${lang}`
+    const codeCacheRef = useRef({});
 
     // Fetch interview on mount
     useEffect(() => {
@@ -47,12 +82,32 @@ const CodingInterview = () => {
                 const response = await api.get(`/coding-interviews/${id}`);
                 const data = response.data.codingInterview;
                 setCodingInterview(data);
+
+                const initialLang = data.language || "python";
+                setSelectedLanguage(initialLang);
+
                 if (data.problems?.length > 0) {
-                    setCode(
-                        data.problems[0].solution ||
-                        data.problems[0].starterCode ||
-                        ""
-                    );
+                    const firstProb = data.problems[0];
+                    const initialCode =
+                        firstProb.solution ||
+                        firstProb.starterCode ||
+                        STARTER_CODES[initialLang] ||
+                        "";
+                    setCode(initialCode);
+                    codeCacheRef.current[`0_${initialLang}`] = initialCode;
+
+                    setCustomInput(firstProb.customInput || firstProb.exampleInput || "");
+
+                    if (firstProb.execStatus) {
+                        setRunResult({
+                            stdout: firstProb.stdout,
+                            stderr: firstProb.stderr,
+                            compileOutput: firstProb.compileOutput,
+                            execStatus: firstProb.execStatus,
+                            execTime: firstProb.execTime,
+                            memoryUsed: firstProb.memoryUsed,
+                        });
+                    }
                 }
             } catch (err) {
                 setError(
@@ -78,14 +133,66 @@ const CodingInterview = () => {
     // Sync code when switching problems
     const switchProblem = (index) => {
         if (!codingInterview?.problems) return;
-        // Save current code before switching
+
+        // Cache current code before switching
+        codeCacheRef.current[`${currentProblemIndex}_${selectedLanguage}`] = code;
+
         if (isDirtyRef.current) {
             triggerAutoSave(currentProblemIndex, code);
         }
-        const problem = codingInterview.problems[index];
-        setCode(problem.solution || problem.starterCode || "");
+
+        const nextProblem = codingInterview.problems[index];
+        const cacheKey = `${index}_${selectedLanguage}`;
+        const nextCode =
+            codeCacheRef.current[cacheKey] ||
+            nextProblem.solution ||
+            nextProblem.starterCode ||
+            STARTER_CODES[selectedLanguage] ||
+            "";
+
+        setCode(nextCode);
         setCurrentProblemIndex(index);
         setError("");
+        setExecutionError("");
+        setSubmitSuccess(false);
+
+        // Load custom stdin or problem's example
+        setCustomInput(nextProblem.customInput || nextProblem.exampleInput || "");
+
+        // Load existing execution output for this problem if available
+        if (nextProblem.execStatus) {
+            setRunResult({
+                stdout: nextProblem.stdout,
+                stderr: nextProblem.stderr,
+                compileOutput: nextProblem.compileOutput,
+                execStatus: nextProblem.execStatus,
+                execTime: nextProblem.execTime,
+                memoryUsed: nextProblem.memoryUsed,
+            });
+        } else {
+            setRunResult(null);
+        }
+    };
+
+    // Handle language change with code preservation per language
+    const handleLanguageChange = (e) => {
+        const newLang = e.target.value;
+        if (newLang === selectedLanguage) return;
+
+        // Cache current code for previous language
+        codeCacheRef.current[`${currentProblemIndex}_${selectedLanguage}`] = code;
+
+        // Check if there is cached code for the new language
+        const targetCacheKey = `${currentProblemIndex}_${newLang}`;
+        const targetCode =
+            codeCacheRef.current[targetCacheKey] ||
+            STARTER_CODES[newLang] ||
+            "";
+
+        setSelectedLanguage(newLang);
+        setCode(targetCode);
+        isDirtyRef.current = true;
+        triggerAutoSave(currentProblemIndex, targetCode);
     };
 
     const triggerAutoSave = (problemIndex, codeValue) => {
@@ -101,7 +208,6 @@ const CodingInterview = () => {
                     problemIndex,
                     code: codeValue,
                 });
-                // Reflect saved code in local state
                 setCodingInterview((prev) => {
                     if (!prev) return prev;
                     const updated = { ...prev };
@@ -135,11 +241,18 @@ const CodingInterview = () => {
             const data = response.data.codingInterview;
             setCodingInterview(data);
             setCurrentProblemIndex(0);
-            setCode(
+
+            const initialLang = data.language || selectedLanguage || "python";
+            setSelectedLanguage(initialLang);
+
+            const initialCode =
                 data.problems[0]?.solution ||
                 data.problems[0]?.starterCode ||
-                ""
-            );
+                STARTER_CODES[initialLang] ||
+                "";
+            setCode(initialCode);
+            codeCacheRef.current[`0_${initialLang}`] = initialCode;
+            setCustomInput(data.problems[0]?.customInput || data.problems[0]?.exampleInput || "");
         } catch (err) {
             setError(
                 err.response?.data?.message || "Failed to generate problems."
@@ -179,18 +292,121 @@ const CodingInterview = () => {
         }
     };
 
+    // Run Code in Judge0 sandbox
+    const handleRunCode = async () => {
+        if (running || submittingSolution) return;
+
+        if (!code.trim()) {
+            setError("Please write some code before running.");
+            return;
+        }
+
+        try {
+            setRunning(true);
+            setError("");
+            setExecutionError("");
+            setRunResult(null);
+
+            const response = await api.post(`/coding-interviews/${id}/run`, {
+                problemIndex: currentProblemIndex,
+                code,
+                language: selectedLanguage,
+                stdin: customInput,
+            });
+
+            const result = response.data.result;
+            setRunResult(result);
+
+            // Update local problem solution & execution fields
+            setCodingInterview((prev) => {
+                if (!prev) return prev;
+                const updated = { ...prev };
+                updated.problems = [...prev.problems];
+                updated.problems[currentProblemIndex] = {
+                    ...updated.problems[currentProblemIndex],
+                    solution: code,
+                    customInput,
+                    stdout: result.stdout,
+                    stderr: result.stderr,
+                    compileOutput: result.compileOutput,
+                    execStatus: result.execStatus,
+                    execTime: result.execTime,
+                    memoryUsed: result.memoryUsed,
+                };
+                return updated;
+            });
+        } catch (err) {
+            const msg =
+                err.response?.data?.message ||
+                err.message ||
+                "Failed to execute code in sandbox.";
+            setExecutionError(msg);
+        } finally {
+            setRunning(false);
+        }
+    };
+
+    // Submit Solution for this problem
+    const handleSubmitSolution = async () => {
+        if (running || submittingSolution) return;
+
+        if (!code.trim()) {
+            setError("Please write some code before submitting.");
+            return;
+        }
+
+        try {
+            setSubmittingSolution(true);
+            setError("");
+            setExecutionError("");
+            setSubmitSuccess(false);
+
+            const response = await api.post(`/coding-interviews/${id}/submit`, {
+                problemIndex: currentProblemIndex,
+                code,
+                language: selectedLanguage,
+                stdin: customInput,
+            });
+
+            const result = response.data.result;
+            const updatedProblem = response.data.problem;
+            setRunResult(result);
+            setSubmitSuccess(true);
+
+            // Update local state to show submitted badge
+            setCodingInterview((prev) => {
+                if (!prev) return prev;
+                const updated = { ...prev };
+                updated.problems = [...prev.problems];
+                updated.problems[currentProblemIndex] = {
+                    ...updated.problems[currentProblemIndex],
+                    ...updatedProblem,
+                };
+                return updated;
+            });
+
+            setTimeout(() => setSubmitSuccess(false), 4000);
+        } catch (err) {
+            const msg =
+                err.response?.data?.message ||
+                err.message ||
+                "Failed to submit solution.";
+            setExecutionError(msg);
+        } finally {
+            setSubmittingSolution(false);
+        }
+    };
+
     const handleFinishInterview = async () => {
         if (completing) return;
 
-        // Save current code first
+        // Auto-save code before leaving
         try {
             await api.post(`/coding-interviews/${id}/save-code`, {
                 problemIndex: currentProblemIndex,
                 code,
             });
-        } catch (_) {
-            // Non-blocking — proceed to completion
-        }
+        } catch (_) {}
 
         try {
             setCompleting(true);
@@ -290,7 +506,29 @@ const CodingInterview = () => {
     const totalProblems = codingInterview.problems.length;
     const progress = ((currentProblemIndex + 1) / totalProblems) * 100;
     const isLastProblem = currentProblemIndex === totalProblems - 1;
-    const langKey = codingInterview.language;
+
+    // Determine status badge color and text
+    const getStatusBadge = () => {
+        if (!runResult) return null;
+        const id = runResult.statusId;
+        const desc = runResult.execStatus || "Completed";
+
+        if (id === 3) {
+            return { bg: "#16a34a", text: "#ffffff", label: `✓ ${desc}` };
+        }
+        if (id === 6) {
+            return { bg: "#dc2626", text: "#ffffff", label: `✕ Compilation Error` };
+        }
+        if (id === 5) {
+            return { bg: "#d97706", text: "#ffffff", label: `⏱ Time Limit Exceeded` };
+        }
+        if (id >= 7 && id <= 12) {
+            return { bg: "#b91c1c", text: "#ffffff", label: `⚠ Runtime Error (${desc})` };
+        }
+        return { bg: "#475467", text: "#ffffff", label: desc };
+    };
+
+    const statusBadge = getStatusBadge();
 
     // -------------------------------------------------------------------------
     // Main coding interview layout
@@ -306,7 +544,20 @@ const CodingInterview = () => {
                         {codingInterview.title}
                     </h1>
                     <p style={{ fontSize: "13px" }}>
-                        {LANGUAGE_LABELS[langKey]} · {codingInterview.difficulty} difficulty
+                        {LANGUAGE_LABELS[selectedLanguage] || selectedLanguage} · {codingInterview.difficulty} difficulty
+                        {problem.submitted && (
+                            <span style={{
+                                marginLeft: "10px",
+                                background: "#dcfce7",
+                                color: "#15803d",
+                                padding: "2px 8px",
+                                borderRadius: "10px",
+                                fontWeight: "700",
+                                fontSize: "11px",
+                            }}>
+                                ✓ Submitted
+                            </span>
+                        )}
                     </p>
                 </div>
 
@@ -333,7 +584,8 @@ const CodingInterview = () => {
                 display: "flex",
                 gap: "8px",
                 marginBottom: "20px",
-                flexWrap: "wrap"
+                flexWrap: "wrap",
+                alignItems: "center"
             }}>
                 {codingInterview.problems.map((p, idx) => (
                     <button
@@ -350,15 +602,49 @@ const CodingInterview = () => {
                             fontSize: "13px",
                             cursor: "pointer",
                             transition: "0.15s",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px"
                         }}
                     >
-                        {idx + 1}. {p.title || `Problem ${idx + 1}`}
+                        <span>{idx + 1}. {p.title || `Problem ${idx + 1}`}</span>
                         {p.submitted && (
-                            <span style={{ marginLeft: "6px", fontSize: "11px" }}>✓</span>
+                            <span style={{
+                                background: idx === currentProblemIndex ? "#ffffff" : "#16a34a",
+                                color: idx === currentProblemIndex ? "#4f46e5" : "#ffffff",
+                                width: "16px",
+                                height: "16px",
+                                borderRadius: "50%",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "10px",
+                                fontWeight: "800",
+                            }}>
+                                ✓
+                            </span>
                         )}
                     </button>
                 ))}
             </div>
+
+            {submitSuccess && (
+                <div style={{
+                    marginBottom: "16px",
+                    padding: "12px 16px",
+                    background: "#f0fdf4",
+                    border: "1px solid #86efac",
+                    borderRadius: "8px",
+                    color: "#166534",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                }}>
+                    <span>✓ Solution submitted successfully for Problem {currentProblemIndex + 1}!</span>
+                </div>
+            )}
 
             {error && (
                 <div className="error-message" style={{ marginBottom: "16px" }}>{error}</div>
@@ -382,13 +668,29 @@ const CodingInterview = () => {
                         borderRadius: "12px",
                         padding: "24px",
                     }}>
-                        <span className="question-label">Problem {currentProblemIndex + 1}</span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                            <span className="question-label" style={{ margin: 0 }}>
+                                Problem {currentProblemIndex + 1}
+                            </span>
+                            {problem.submitted && (
+                                <span style={{
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    color: "#16a34a",
+                                    background: "#f0fdf4",
+                                    border: "1px solid #bbf7d0",
+                                    padding: "2px 8px",
+                                    borderRadius: "12px",
+                                }}>
+                                    Submitted
+                                </span>
+                            )}
+                        </div>
 
                         <h2 style={{ fontSize: "18px", marginBottom: "16px" }}>
                             {problem.title || `Problem ${currentProblemIndex + 1}`}
                         </h2>
 
-                        {/* Render problem text — preserve markdown-like line breaks */}
                         <div style={{
                             fontSize: "14px",
                             lineHeight: "1.75",
@@ -421,9 +723,27 @@ const CodingInterview = () => {
 
                             {problem.exampleInput && (
                                 <div style={{ marginBottom: "10px" }}>
-                                    <p style={{ fontSize: "12px", fontWeight: "600", color: "#475467", marginBottom: "4px" }}>
-                                        Input:
-                                    </p>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                                        <p style={{ fontSize: "12px", fontWeight: "600", color: "#475467" }}>
+                                            Input:
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCustomInput(problem.exampleInput)}
+                                            style={{
+                                                background: "transparent",
+                                                border: "none",
+                                                color: "#4f46e5",
+                                                fontSize: "11px",
+                                                fontWeight: "600",
+                                                cursor: "pointer",
+                                                textDecoration: "underline",
+                                                padding: 0
+                                            }}
+                                        >
+                                            Use as Test Input
+                                        </button>
+                                    </div>
                                     <code style={{
                                         display: "block",
                                         background: "#1e293b",
@@ -442,7 +762,7 @@ const CodingInterview = () => {
                             {problem.exampleOutput && (
                                 <div>
                                     <p style={{ fontSize: "12px", fontWeight: "600", color: "#475467", marginBottom: "4px" }}>
-                                        Output:
+                                        Expected Output:
                                     </p>
                                     <code style={{
                                         display: "block",
@@ -461,27 +781,46 @@ const CodingInterview = () => {
                         </div>
                     )}
 
-                    {/* Custom input (for Stage 2 test runs) */}
+                    {/* Custom Test Input (stdin) */}
                     <div style={{
                         background: "#ffffff",
                         border: "1px solid #e5e7eb",
                         borderRadius: "10px",
                         padding: "18px",
                     }}>
-                        <p style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            letterSpacing: "0.8px",
-                            color: "#667085",
-                            marginBottom: "10px",
-                            textTransform: "uppercase"
-                        }}>
-                            Custom Test Input
-                        </p>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                            <p style={{
+                                fontSize: "11px",
+                                fontWeight: "700",
+                                letterSpacing: "0.8px",
+                                color: "#667085",
+                                textTransform: "uppercase"
+                            }}>
+                                Custom Test Input (stdin)
+                            </p>
+                            {customInput && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomInput("")}
+                                    style={{
+                                        background: "transparent",
+                                        border: "none",
+                                        color: "#dc2626",
+                                        fontSize: "11px",
+                                        cursor: "pointer",
+                                        padding: 0
+                                    }}
+                                >
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+
                         <textarea
-                            placeholder="Enter custom stdin here (available when Run is enabled)"
-                            rows={4}
-                            disabled
+                            placeholder="Enter test input passed to your program's stdin..."
+                            rows={3}
+                            value={customInput}
+                            onChange={(e) => setCustomInput(e.target.value)}
                             style={{
                                 width: "100%",
                                 padding: "10px 12px",
@@ -490,48 +829,59 @@ const CodingInterview = () => {
                                 resize: "vertical",
                                 fontSize: "13px",
                                 fontFamily: "'Fira Code', 'Cascadia Code', monospace",
-                                background: "#f9fafb",
-                                color: "#9ca3af",
-                                cursor: "not-allowed",
+                                background: "#f8fafc",
+                                color: "#1e293b",
+                                outline: "none",
                             }}
                         />
-                        <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "6px" }}>
-                            Code execution (Run) is coming in Stage 2.
+                        <p style={{ fontSize: "11px", color: "#667085", marginTop: "6px" }}>
+                            Provided stdin is passed directly to the sandboxed execution.
                         </p>
                     </div>
 
                 </div>
 
-                {/* ==== Right: Editor + Actions ==== */}
+                {/* ==== Right: Editor + Actions + Output Terminal ==== */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
 
-                    {/* Language label + editor header */}
+                    {/* Language selector & Editor Toolbar */}
                     <div style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
                         background: "#1e293b",
-                        padding: "10px 16px",
+                        padding: "8px 16px",
                         borderRadius: "10px 10px 0 0",
                     }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <span style={{
-                                background: "#4f46e5",
-                                color: "#ffffff",
-                                padding: "3px 10px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                fontWeight: "700"
-                            }}>
-                                {LANGUAGE_LABELS[langKey] || langKey}
-                            </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            {/* Interactive Language Selector */}
+                            <select
+                                value={selectedLanguage}
+                                onChange={handleLanguageChange}
+                                style={{
+                                    background: "#334155",
+                                    color: "#ffffff",
+                                    border: "1px solid #475467",
+                                    borderRadius: "8px",
+                                    padding: "4px 10px",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    cursor: "pointer",
+                                    outline: "none",
+                                }}
+                            >
+                                <option value="python">Python 3</option>
+                                <option value="javascript">JavaScript (Node.js)</option>
+                                <option value="cpp">C++ (GCC)</option>
+                            </select>
+
                             <span style={{ color: "#94a3b8", fontSize: "12px" }}>
                                 {problem.title || `Problem ${currentProblemIndex + 1}`}
                             </span>
                         </div>
 
                         {/* Save indicator */}
-                        <div style={{ fontSize: "12px", color: "#64748b" }}>
+                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>
                             {saveStatus === "saving" ? "● Saving…" : saveStatus === "saved" ? "✓ Saved" : ""}
                         </div>
                     </div>
@@ -558,8 +908,8 @@ const CodingInterview = () => {
                             </div>
                         }>
                             <Editor
-                                height="440px"
-                                language={MONACO_LANGUAGE[langKey] || "plaintext"}
+                                height="430px"
+                                language={MONACO_LANGUAGE[selectedLanguage] || "plaintext"}
                                 value={code}
                                 onChange={handleCodeChange}
                                 theme="vs-dark"
@@ -569,7 +919,7 @@ const CodingInterview = () => {
                                     scrollBeyondLastLine: false,
                                     wordWrap: "on",
                                     lineNumbers: "on",
-                                    tabSize: langKey === "python" ? 4 : 2,
+                                    tabSize: selectedLanguage === "python" ? 4 : 2,
                                     insertSpaces: true,
                                     automaticLayout: true,
                                     padding: { top: 14, bottom: 14 },
@@ -585,6 +935,58 @@ const CodingInterview = () => {
                         flexWrap: "wrap",
                         alignItems: "center"
                     }}>
+                        {/* Run Code Button */}
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleRunCode}
+                            disabled={running || submittingSolution}
+                            style={{
+                                fontSize: "13px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                background: running ? "#6366f1" : "#4f46e5",
+                            }}
+                        >
+                            {running ? (
+                                <>
+                                    <span style={{
+                                        width: "12px",
+                                        height: "12px",
+                                        border: "2px solid #ffffff",
+                                        borderTopColor: "transparent",
+                                        borderRadius: "50%",
+                                        display: "inline-block",
+                                        animation: "spin 1s linear infinite"
+                                    }} />
+                                    <span>Running in Sandbox…</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span>▷</span>
+                                    <span>Run Code</span>
+                                </>
+                            )}
+                        </button>
+
+                        {/* Submit Solution Button */}
+                        <button
+                            className="btn"
+                            onClick={handleSubmitSolution}
+                            disabled={running || submittingSolution}
+                            style={{
+                                fontSize: "13px",
+                                background: "#16a34a",
+                                color: "#ffffff",
+                                border: "none",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                            }}
+                        >
+                            {submittingSolution ? "Submitting…" : "✓ Submit Solution"}
+                        </button>
+
                         {/* Manual Save */}
                         <button
                             className="btn btn-secondary"
@@ -595,28 +997,12 @@ const CodingInterview = () => {
                             {saving ? "Saving…" : "Save Code"}
                         </button>
 
-                        {/* Run Code (placeholder — Stage 2) */}
-                        <button
-                            className="btn"
-                            disabled
-                            title="Code execution coming in Stage 2"
-                            style={{
-                                background: "#f0fdf4",
-                                color: "#9ca3af",
-                                border: "1px solid #d1fae5",
-                                cursor: "not-allowed",
-                                fontSize: "13px",
-                            }}
-                        >
-                            ▷ Run Code
-                        </button>
-
                         <div style={{ flex: 1 }} />
 
                         {/* Next Problem / Finish */}
                         {!isLastProblem ? (
                             <button
-                                className="btn btn-primary"
+                                className="btn btn-secondary"
                                 onClick={() => switchProblem(currentProblemIndex + 1)}
                                 style={{ fontSize: "13px" }}
                             >
@@ -634,27 +1020,201 @@ const CodingInterview = () => {
                         )}
                     </div>
 
-                    {/* Output panel placeholder */}
+                    {/* Output Terminal Panel */}
                     <div style={{
                         background: "#0f172a",
                         border: "1px solid #1e293b",
                         borderRadius: "10px",
                         padding: "16px",
-                        minHeight: "100px",
+                        minHeight: "140px",
+                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
                     }}>
-                        <p style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            letterSpacing: "0.8px",
-                            color: "#475467",
-                            marginBottom: "10px",
-                            textTransform: "uppercase"
+                        {/* Terminal Header */}
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            borderBottom: "1px solid #1e293b",
+                            paddingBottom: "10px",
+                            marginBottom: "12px",
                         }}>
-                            Output
-                        </p>
-                        <p style={{ color: "#64748b", fontSize: "13px", fontStyle: "italic" }}>
-                            Run Code output will appear here (available in Stage 2).
-                        </p>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <span style={{
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    color: "#94a3b8",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.8px"
+                                }}>
+                                    Terminal Output
+                                </span>
+
+                                {running && (
+                                    <span style={{
+                                        background: "#312e81",
+                                        color: "#c7d2fe",
+                                        fontSize: "11px",
+                                        padding: "2px 8px",
+                                        borderRadius: "10px",
+                                        fontWeight: "600"
+                                    }}>
+                                        Executing…
+                                    </span>
+                                )}
+
+                                {!running && statusBadge && (
+                                    <span style={{
+                                        background: statusBadge.bg,
+                                        color: statusBadge.text,
+                                        fontSize: "11px",
+                                        padding: "2px 8px",
+                                        borderRadius: "10px",
+                                        fontWeight: "700"
+                                    }}>
+                                        {statusBadge.label}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                {runResult?.execTime && (
+                                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                                        Time: <strong>{runResult.execTime}s</strong>
+                                    </span>
+                                )}
+                                {runResult?.memoryUsed && (
+                                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                                        Memory: <strong>{runResult.memoryUsed} KB</strong>
+                                    </span>
+                                )}
+                                {runResult && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRunResult(null)}
+                                        style={{
+                                            background: "transparent",
+                                            border: "none",
+                                            color: "#64748b",
+                                            fontSize: "12px",
+                                            cursor: "pointer",
+                                            padding: 0
+                                        }}
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Terminal Body */}
+                        {running && (
+                            <div style={{
+                                color: "#94a3b8",
+                                fontSize: "13px",
+                                fontStyle: "italic",
+                                padding: "12px 0",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px"
+                            }}>
+                                <span>Running code in Judge0 isolated container…</span>
+                            </div>
+                        )}
+
+                        {executionError && (
+                            <div style={{
+                                background: "#450a0a",
+                                border: "1px solid #7f1d1d",
+                                borderRadius: "6px",
+                                padding: "10px 12px",
+                                color: "#fca5a5",
+                                fontSize: "13px",
+                                fontFamily: "'Fira Code', 'Cascadia Code', monospace",
+                                whiteSpace: "pre-wrap",
+                            }}>
+                                <strong>Execution Error:</strong> {executionError}
+                            </div>
+                        )}
+
+                        {!running && !executionError && runResult && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                                {/* Compilation Error Output */}
+                                {runResult.compileOutput && (
+                                    <div>
+                                        <p style={{ fontSize: "11px", color: "#f87171", fontWeight: "700", marginBottom: "4px" }}>
+                                            COMPILATION ERROR:
+                                        </p>
+                                        <pre style={{
+                                            background: "#1e1e2e",
+                                            color: "#f87171",
+                                            padding: "10px 12px",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontFamily: "'Fira Code', 'Cascadia Code', monospace",
+                                            margin: 0,
+                                            whiteSpace: "pre-wrap",
+                                            overflowX: "auto"
+                                        }}>
+                                            {runResult.compileOutput}
+                                        </pre>
+                                    </div>
+                                )}
+
+                                {/* Runtime Standard Error Output */}
+                                {runResult.stderr && (
+                                    <div>
+                                        <p style={{ fontSize: "11px", color: "#fb923c", fontWeight: "700", marginBottom: "4px" }}>
+                                            STDERR:
+                                        </p>
+                                        <pre style={{
+                                            background: "#1e1e2e",
+                                            color: "#fb923c",
+                                            padding: "10px 12px",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontFamily: "'Fira Code', 'Cascadia Code', monospace",
+                                            margin: 0,
+                                            whiteSpace: "pre-wrap",
+                                            overflowX: "auto"
+                                        }}>
+                                            {runResult.stderr}
+                                        </pre>
+                                    </div>
+                                )}
+
+                                {/* Standard Output */}
+                                {runResult.stdout ? (
+                                    <div>
+                                        <p style={{ fontSize: "11px", color: "#4ade80", fontWeight: "700", marginBottom: "4px" }}>
+                                            STDOUT:
+                                        </p>
+                                        <pre style={{
+                                            background: "#111827",
+                                            color: "#4ade80",
+                                            padding: "10px 12px",
+                                            borderRadius: "6px",
+                                            fontSize: "13px",
+                                            fontFamily: "'Fira Code', 'Cascadia Code', monospace",
+                                            margin: 0,
+                                            whiteSpace: "pre-wrap",
+                                            overflowX: "auto"
+                                        }}>
+                                            {runResult.stdout}
+                                        </pre>
+                                    </div>
+                                ) : !runResult.compileOutput && !runResult.stderr ? (
+                                    <p style={{ color: "#64748b", fontSize: "13px", fontStyle: "italic", margin: "6px 0" }}>
+                                        (Program finished with no standard output)
+                                    </p>
+                                ) : null}
+                            </div>
+                        )}
+
+                        {!running && !executionError && !runResult && (
+                            <p style={{ color: "#64748b", fontSize: "13px", fontStyle: "italic", margin: "8px 0" }}>
+                                Click <strong>Run Code</strong> to execute your code against custom stdin or <strong>Submit Solution</strong> to record your answer.
+                            </p>
+                        )}
                     </div>
 
                 </div>

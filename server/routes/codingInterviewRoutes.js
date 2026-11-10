@@ -8,6 +8,8 @@ const {
     getCodingInterviewById,
     generateProblems,
     saveCode,
+    runCode,
+    submitSolution,
     deleteCodingInterview,
 } = require("../controllers/codingInterviewController");
 
@@ -23,6 +25,10 @@ router.get("/:id", protect, getCodingInterviewById);
 router.post("/:id/generate", protect, generateProblems);
 
 router.post("/:id/save-code", protect, saveCode);
+
+router.post("/:id/run", protect, runCode);
+
+router.post("/:id/submit", protect, submitSolution);
 
 router.delete("/:id", protect, deleteCodingInterview);
 

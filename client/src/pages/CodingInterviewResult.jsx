@@ -250,6 +250,20 @@ const CodingInterviewResult = () => {
                                                     }}>{problem.stdout}</pre>
                                                 </>
                                             )}
+                                            {problem.compileOutput && (
+                                                <>
+                                                    <p style={{ marginTop: "8px" }}><strong>Compilation Output:</strong></p>
+                                                    <pre style={{
+                                                        background: "#1e293b",
+                                                        color: "#f87171",
+                                                        padding: "8px 12px",
+                                                        borderRadius: "6px",
+                                                        fontSize: "12px",
+                                                        margin: "4px 0 0 0",
+                                                        whiteSpace: "pre-wrap"
+                                                    }}>{problem.compileOutput}</pre>
+                                                </>
+                                            )}
                                             {problem.stderr && (
                                                 <>
                                                     <p style={{ marginTop: "8px" }}><strong>Errors:</strong></p>

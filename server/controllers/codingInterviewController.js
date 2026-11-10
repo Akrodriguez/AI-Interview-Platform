@@ -1,4 +1,11 @@
 const CodingInterview = require("../models/CodingInterview");
+const {
+    executeCode,
+    resolveLanguageId,
+} = require("../utils/judge0Client");
+
+const MAX_CODE_LENGTH = 65536; // 64 KB
+const MAX_STDIN_LENGTH = 16384; // 16 KB
 
 // Default starter code templates per language
 const STARTER_CODE = {
@@ -251,6 +258,217 @@ const saveCode = async (req, res) => {
 // @desc    Delete a Coding Interview session
 // @route   DELETE /api/coding-interviews/:id
 // @access  Private
+const runCode = async (req, res) => {
+    try {
+        const { problemIndex, code, language, stdin = "" } = req.body;
+
+        if (code === undefined || typeof code !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Source code must be provided as a string.",
+            });
+        }
+
+        if (!code.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Source code cannot be empty.",
+            });
+        }
+
+        if (code.length > MAX_CODE_LENGTH) {
+            return res.status(400).json({
+                success: false,
+                message: `Source code exceeds maximum allowed size of ${MAX_CODE_LENGTH / 1024}KB.`,
+            });
+        }
+
+        if (stdin !== undefined && typeof stdin === "string" && stdin.length > MAX_STDIN_LENGTH) {
+            return res.status(400).json({
+                success: false,
+                message: `Standard input exceeds maximum allowed size of ${MAX_STDIN_LENGTH / 1024}KB.`,
+            });
+        }
+
+        const codingInterview = await CodingInterview.findOne({
+            _id: req.params.id,
+            user: req.user._id,
+        });
+
+        if (!codingInterview) {
+            return res.status(404).json({
+                success: false,
+                message: "Coding interview not found.",
+            });
+        }
+
+        const resolvedLang = language || codingInterview.language;
+        const langId = resolveLanguageId(resolvedLang);
+        if (!langId) {
+            return res.status(400).json({
+                success: false,
+                message: `Unsupported language "${resolvedLang}". Supported languages: python, javascript, cpp`,
+            });
+        }
+
+        const result = await executeCode({
+            language: resolvedLang,
+            sourceCode: code,
+            stdin: typeof stdin === "string" ? stdin : "",
+        });
+
+        // If a valid problemIndex was provided, update recent run output and code in DB
+        if (
+            problemIndex !== undefined &&
+            typeof problemIndex === "number" &&
+            problemIndex >= 0 &&
+            problemIndex < codingInterview.problems.length
+        ) {
+            const problem = codingInterview.problems[problemIndex];
+            problem.solution = code;
+            if (typeof stdin === "string") {
+                problem.customInput = stdin;
+            }
+            problem.stdout = result.stdout;
+            problem.stderr = result.stderr;
+            problem.compileOutput = result.compileOutput;
+            problem.execStatus = result.execStatus;
+            problem.execTime = result.execTime;
+            problem.memoryUsed = result.memoryUsed;
+
+            await codingInterview.save();
+        }
+
+        return res.status(200).json({
+            success: true,
+            result,
+        });
+    } catch (error) {
+        const isTimeout = error.message && error.message.includes("timed out");
+        const isConfig = error.message && error.message.includes("not configured");
+        const isRateLimit = error.message && error.message.includes("rate limit");
+        const isAuth = error.message && error.message.includes("API key");
+        const status = isConfig ? 503 : isAuth ? 401 : isRateLimit ? 429 : isTimeout ? 504 : 500;
+
+        return res.status(status).json({
+            success: false,
+            message: error.message || "Failed to execute code.",
+        });
+    }
+};
+
+const submitSolution = async (req, res) => {
+    try {
+        const { problemIndex, code, language, stdin = "" } = req.body;
+
+        if (problemIndex === undefined || typeof problemIndex !== "number") {
+            return res.status(400).json({
+                success: false,
+                message: "problemIndex is required as a number.",
+            });
+        }
+
+        if (code === undefined || typeof code !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Source code must be provided as a string.",
+            });
+        }
+
+        if (!code.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Source code cannot be empty.",
+            });
+        }
+
+        if (code.length > MAX_CODE_LENGTH) {
+            return res.status(400).json({
+                success: false,
+                message: `Source code exceeds maximum allowed size of ${MAX_CODE_LENGTH / 1024}KB.`,
+            });
+        }
+
+        if (stdin !== undefined && typeof stdin === "string" && stdin.length > MAX_STDIN_LENGTH) {
+            return res.status(400).json({
+                success: false,
+                message: `Standard input exceeds maximum allowed size of ${MAX_STDIN_LENGTH / 1024}KB.`,
+            });
+        }
+
+        const codingInterview = await CodingInterview.findOne({
+            _id: req.params.id,
+            user: req.user._id,
+        });
+
+        if (!codingInterview) {
+            return res.status(404).json({
+                success: false,
+                message: "Coding interview not found.",
+            });
+        }
+
+        if (
+            problemIndex < 0 ||
+            problemIndex >= codingInterview.problems.length
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid problem index.",
+            });
+        }
+
+        const resolvedLang = language || codingInterview.language;
+        const langId = resolveLanguageId(resolvedLang);
+        if (!langId) {
+            return res.status(400).json({
+                success: false,
+                message: `Unsupported language "${resolvedLang}". Supported languages: python, javascript, cpp`,
+            });
+        }
+
+        // Execute code in sandbox
+        const result = await executeCode({
+            language: resolvedLang,
+            sourceCode: code,
+            stdin: typeof stdin === "string" ? stdin : "",
+        });
+
+        const problem = codingInterview.problems[problemIndex];
+        problem.solution = code;
+        if (typeof stdin === "string") {
+            problem.customInput = stdin;
+        }
+        problem.stdout = result.stdout;
+        problem.stderr = result.stderr;
+        problem.compileOutput = result.compileOutput;
+        problem.execStatus = result.execStatus;
+        problem.execTime = result.execTime;
+        problem.memoryUsed = result.memoryUsed;
+        problem.submitted = true;
+
+        await codingInterview.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Solution submitted successfully.",
+            problem,
+            result,
+        });
+    } catch (error) {
+        const isTimeout = error.message && error.message.includes("timed out");
+        const isConfig = error.message && error.message.includes("not configured");
+        const isRateLimit = error.message && error.message.includes("rate limit");
+        const isAuth = error.message && error.message.includes("API key");
+        const status = isConfig ? 503 : isAuth ? 401 : isRateLimit ? 429 : isTimeout ? 504 : 500;
+
+        return res.status(status).json({
+            success: false,
+            message: error.message || "Failed to submit code.",
+        });
+    }
+};
+
 const deleteCodingInterview = async (req, res) => {
     try {
         const codingInterview = await CodingInterview.findOne({
@@ -429,5 +647,7 @@ module.exports = {
     getCodingInterviewById,
     generateProblems,
     saveCode,
+    runCode,
+    submitSolution,
     deleteCodingInterview,
 };
