@@ -505,6 +505,154 @@ const deleteCodingInterview = async (req, res) => {
  * Generate placeholder coding problems for Stage 1 (no AI yet).
  * Replaced by AI-generated problems in Stage 3.
  */
+
+// @desc    Update proctoring events and anti-cheating violation counters
+// @route   POST /api/coding-interviews/:id/proctoring
+// @access  Private
+const updateProctoringEvents = async (req, res) => {
+    try {
+        const codingInterview = await CodingInterview.findOne({
+            _id: req.params.id,
+            user: req.user._id,
+        });
+
+        if (!codingInterview) {
+            return res.status(404).json({
+                success: false,
+                message: "Coding interview not found.",
+            });
+        }
+
+        const {
+            events,
+            tabSwitchCount,
+            noFaceDetectedCount,
+            multipleFaceDetectedCount,
+            copyAttemptCount,
+            pasteAttemptCount,
+            cutAttemptCount,
+            dragDropAttemptCount,
+            fullscreenExitCount,
+        } = req.body;
+
+        // Monotonically update violation counters (never decrease)
+        const updateNonNegative = (current, incoming) => {
+            if (typeof incoming === "number" && !isNaN(incoming) && incoming >= 0) {
+                return Math.max(current || 0, Math.floor(incoming));
+            }
+            return current || 0;
+        };
+
+        if (tabSwitchCount !== undefined) {
+            codingInterview.tabSwitchCount = updateNonNegative(codingInterview.tabSwitchCount, tabSwitchCount);
+        }
+        if (noFaceDetectedCount !== undefined) {
+            codingInterview.noFaceDetectedCount = updateNonNegative(codingInterview.noFaceDetectedCount, noFaceDetectedCount);
+        }
+        if (multipleFaceDetectedCount !== undefined) {
+            codingInterview.multipleFaceDetectedCount = updateNonNegative(codingInterview.multipleFaceDetectedCount, multipleFaceDetectedCount);
+        }
+        if (copyAttemptCount !== undefined) {
+            codingInterview.copyAttemptCount = updateNonNegative(codingInterview.copyAttemptCount, copyAttemptCount);
+        }
+        if (pasteAttemptCount !== undefined) {
+            codingInterview.pasteAttemptCount = updateNonNegative(codingInterview.pasteAttemptCount, pasteAttemptCount);
+        }
+        if (cutAttemptCount !== undefined) {
+            codingInterview.cutAttemptCount = updateNonNegative(codingInterview.cutAttemptCount, cutAttemptCount);
+        }
+        if (dragDropAttemptCount !== undefined) {
+            codingInterview.dragDropAttemptCount = updateNonNegative(codingInterview.dragDropAttemptCount, dragDropAttemptCount);
+        }
+        if (fullscreenExitCount !== undefined) {
+            codingInterview.fullscreenExitCount = updateNonNegative(codingInterview.fullscreenExitCount, fullscreenExitCount);
+        }
+
+        // Process event array
+        const rawEvents = Array.isArray(events) ? events : [];
+        if (rawEvents.length > 0) {
+            const sanitizedEvents = rawEvents.map((evt) => {
+                const eventType = typeof evt.eventType === "string" ? evt.eventType.slice(0, 50) : "unknown";
+                const message = typeof evt.message === "string" ? evt.message.slice(0, 200) : "";
+                const details = typeof evt.details === "string" ? evt.details.slice(0, 200) : "";
+                const duration = typeof evt.duration === "number" && !isNaN(evt.duration) ? Math.max(0, evt.duration) : 0;
+                const count = typeof evt.count === "number" && !isNaN(evt.count) ? Math.max(1, evt.count) : 1;
+                const timestamp = evt.timestamp ? new Date(evt.timestamp) : new Date();
+
+                return {
+                    eventType,
+                    message,
+                    details,
+                    duration,
+                    count,
+                    timestamp: isNaN(timestamp.getTime()) ? new Date() : timestamp,
+                };
+            });
+
+            // Append with a 300-event cap to prevent DB bloat
+            const existing = codingInterview.proctoringEvents || [];
+            const merged = [...existing, ...sanitizedEvents];
+            codingInterview.proctoringEvents = merged.slice(-300);
+        }
+
+        await codingInterview.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Proctoring metrics updated successfully.",
+            proctoring: {
+                tabSwitchCount: codingInterview.tabSwitchCount,
+                noFaceDetectedCount: codingInterview.noFaceDetectedCount,
+                multipleFaceDetectedCount: codingInterview.multipleFaceDetectedCount,
+                copyAttemptCount: codingInterview.copyAttemptCount,
+                pasteAttemptCount: codingInterview.pasteAttemptCount,
+                cutAttemptCount: codingInterview.cutAttemptCount,
+                dragDropAttemptCount: codingInterview.dragDropAttemptCount,
+                fullscreenExitCount: codingInterview.fullscreenExitCount,
+                eventCount: codingInterview.proctoringEvents.length,
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// @desc    Complete a Coding Interview session
+// @route   POST /api/coding-interviews/:id/complete
+// @access  Private
+const completeCodingInterview = async (req, res) => {
+    try {
+        const codingInterview = await CodingInterview.findOne({
+            _id: req.params.id,
+            user: req.user._id,
+        });
+
+        if (!codingInterview) {
+            return res.status(404).json({
+                success: false,
+                message: "Coding interview not found.",
+            });
+        }
+
+        codingInterview.completed = true;
+        await codingInterview.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Coding interview completed.",
+            codingInterview,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
 function generatePlaceholderProblems(count, difficulty, language, topic, role) {
     const pool = [
         {
@@ -650,4 +798,6 @@ module.exports = {
     runCode,
     submitSolution,
     deleteCodingInterview,
+    updateProctoringEvents,
+    completeCodingInterview,
 };

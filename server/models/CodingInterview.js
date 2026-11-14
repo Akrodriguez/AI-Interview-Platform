@@ -173,6 +173,81 @@ const codingInterviewSchema = new mongoose.Schema(
         // Ordered list of coding problems
         problems: [codingProblemSchema],
 
+        // ----- Proctoring & Anti-Cheating Fields -----
+        proctoringEnabled: {
+            type: Boolean,
+            default: true,
+        },
+
+        tabSwitchCount: {
+            type: Number,
+            default: 0,
+        },
+
+        noFaceDetectedCount: {
+            type: Number,
+            default: 0,
+        },
+
+        multipleFaceDetectedCount: {
+            type: Number,
+            default: 0,
+        },
+
+        copyAttemptCount: {
+            type: Number,
+            default: 0,
+        },
+
+        pasteAttemptCount: {
+            type: Number,
+            default: 0,
+        },
+
+        cutAttemptCount: {
+            type: Number,
+            default: 0,
+        },
+
+        dragDropAttemptCount: {
+            type: Number,
+            default: 0,
+        },
+
+        fullscreenExitCount: {
+            type: Number,
+            default: 0,
+        },
+
+        proctoringEvents: [
+            {
+                eventType: {
+                    type: String,
+                    required: true,
+                },
+                timestamp: {
+                    type: Date,
+                    default: Date.now,
+                },
+                duration: {
+                    type: Number,
+                    default: 0,
+                },
+                count: {
+                    type: Number,
+                    default: 1,
+                },
+                message: {
+                    type: String,
+                    default: "",
+                },
+                details: {
+                    type: String,
+                    default: "",
+                },
+            },
+        ],
+
         // ----- Final Report (populated when interview is completed) -----
         overallScore: {
             type: Number,

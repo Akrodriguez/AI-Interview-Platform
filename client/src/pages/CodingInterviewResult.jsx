@@ -49,8 +49,36 @@ const CodingInterviewResult = () => {
         );
     }
 
-    const { title, language, difficulty, problems, overallScore, summary, recommendation } = codingInterview;
+    const {
+        title,
+        language,
+        difficulty,
+        problems,
+        overallScore,
+        summary,
+        recommendation,
+        tabSwitchCount = 0,
+        noFaceDetectedCount = 0,
+        multipleFaceDetectedCount = 0,
+        copyAttemptCount = 0,
+        pasteAttemptCount = 0,
+        cutAttemptCount = 0,
+        dragDropAttemptCount = 0,
+        fullscreenExitCount = 0,
+        proctoringEvents = [],
+    } = codingInterview;
+
     const problemsAttempted = problems.filter((p) => p.solution?.trim()).length;
+
+    const totalObservations =
+        (tabSwitchCount || 0) +
+        (pasteAttemptCount || 0) +
+        (copyAttemptCount || 0) +
+        (cutAttemptCount || 0) +
+        (dragDropAttemptCount || 0) +
+        (noFaceDetectedCount || 0) +
+        (multipleFaceDetectedCount || 0) +
+        (fullscreenExitCount || 0);
 
     return (
         <div className="page-container result-page">
@@ -61,7 +89,7 @@ const CodingInterviewResult = () => {
                     <p className="result-label">CODING INTERVIEW REPORT</p>
                     <h1>Coding Interview Results</h1>
                     <p className="result-subtitle">
-                        Review your code solutions and performance.
+                        Review your code solutions and session integrity report.
                     </p>
                 </div>
 
@@ -119,6 +147,121 @@ const CodingInterviewResult = () => {
                     )}
                 </div>
             )}
+
+            {/* Proctoring & Integrity Observations Summary Card */}
+            <div className="recommendation-card" style={{ marginBottom: "28px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", flexWrap: "wrap", gap: "8px" }}>
+                    <p className="card-label">PROCTORING & INTEGRITY SUMMARY</p>
+                    <span style={{
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        padding: "3px 10px",
+                        borderRadius: "12px",
+                        background: totalObservations === 0 ? "#dcfce7" : "#fee2e2",
+                        color: totalObservations === 0 ? "#15803d" : "#b91c1c",
+                        border: `1px solid ${totalObservations === 0 ? "#bbf7d0" : "#fecaca"}`,
+                    }}>
+                        {totalObservations === 0 ? "✓ Clear Session" : `⚠ ${totalObservations} Recorded Observation${totalObservations === 1 ? "" : "s"}`}
+                    </span>
+                </div>
+
+                <h2>Automated Session Observations</h2>
+                <p style={{ color: "#667085", fontSize: "14px", lineHeight: "1.6", marginBottom: "18px" }}>
+                    These metrics reflect automated browser, clipboard, and camera-monitoring observations recorded during the coding session. They are recorded for review and do not automatically indicate dishonesty or disqualify a candidate.
+                </p>
+
+                {/* Metric Grid (8 observation counts) */}
+                <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                    gap: "12px",
+                    marginBottom: "20px"
+                }}>
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Tab Switches</span>
+                        <strong style={{ fontSize: "18px", color: tabSwitchCount > 0 ? "#dc2626" : "#1e293b" }}>{tabSwitchCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Paste Attempts</span>
+                        <strong style={{ fontSize: "18px", color: pasteAttemptCount > 0 ? "#dc2626" : "#1e293b" }}>{pasteAttemptCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Copy Attempts</span>
+                        <strong style={{ fontSize: "18px", color: copyAttemptCount > 0 ? "#d97706" : "#1e293b" }}>{copyAttemptCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Cut Attempts</span>
+                        <strong style={{ fontSize: "18px", color: cutAttemptCount > 0 ? "#d97706" : "#1e293b" }}>{cutAttemptCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Drag & Drops</span>
+                        <strong style={{ fontSize: "18px", color: dragDropAttemptCount > 0 ? "#dc2626" : "#1e293b" }}>{dragDropAttemptCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>No Face Alerts</span>
+                        <strong style={{ fontSize: "18px", color: noFaceDetectedCount > 0 ? "#dc2626" : "#1e293b" }}>{noFaceDetectedCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Multiple Faces</span>
+                        <strong style={{ fontSize: "18px", color: multipleFaceDetectedCount > 0 ? "#d97706" : "#1e293b" }}>{multipleFaceDetectedCount}</strong>
+                    </div>
+
+                    <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "10px", border: "1px solid #edf0f5", textAlign: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", display: "block", textTransform: "uppercase" }}>Fullscreen Exits</span>
+                        <strong style={{ fontSize: "18px", color: fullscreenExitCount > 0 ? "#dc2626" : "#1e293b" }}>{fullscreenExitCount}</strong>
+                    </div>
+                </div>
+
+                {/* Recorded Proctoring Events Log */}
+                {proctoringEvents.length > 0 ? (
+                    <div>
+                        <p style={{ fontSize: "12px", fontWeight: "700", color: "#475467", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
+                            Timeline Observations ({proctoringEvents.length})
+                        </p>
+                        <div style={{
+                            maxHeight: "220px",
+                            overflowY: "auto",
+                            border: "1px solid #edf0f5",
+                            borderRadius: "8px",
+                            padding: "8px 14px",
+                            background: "#fcfcfd"
+                        }}>
+                            {proctoringEvents.map((evt, idx) => (
+                                <div key={idx} style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 0",
+                                    borderBottom: idx < proctoringEvents.length - 1 ? "1px solid #f1f5f9" : "none",
+                                    fontSize: "12px"
+                                }}>
+                                    <div>
+                                        <strong style={{ color: "#1e293b", textTransform: "capitalize" }}>
+                                            {evt.eventType ? evt.eventType.replace(/_/g, " ") : "Observation"}
+                                        </strong>
+                                        <p style={{ margin: "2px 0 0 0", color: "#64748b", fontSize: "11px" }}>
+                                            {evt.message || evt.details || "Activity recorded"}
+                                        </p>
+                                    </div>
+                                    <span style={{ color: "#94a3b8", fontSize: "11px", flexShrink: 0 }}>
+                                        {new Date(evt.timestamp).toLocaleTimeString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <p style={{ color: "#15803d", fontSize: "13px", fontWeight: "500", margin: 0 }}>
+                        ✓ No proctoring events or violations were recorded during this session.
+                    </p>
+                )}
+            </div>
 
             {/* Per-problem review */}
             <div className="questions-section">
@@ -323,7 +466,6 @@ const CodingInterviewResult = () => {
                                     </div>
                                 )}
 
-                                {/* No evaluation yet placeholder */}
                                 {!hasFeedback && !hasScore && hasCode && (
                                     <div className="improvement-block">
                                         <p style={{

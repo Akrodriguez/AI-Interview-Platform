@@ -11,6 +11,8 @@ const {
     runCode,
     submitSolution,
     deleteCodingInterview,
+    updateProctoringEvents,
+    completeCodingInterview,
 } = require("../controllers/codingInterviewController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -29,6 +31,10 @@ router.post("/:id/save-code", protect, saveCode);
 router.post("/:id/run", protect, runCode);
 
 router.post("/:id/submit", protect, submitSolution);
+
+router.post("/:id/proctoring", protect, updateProctoringEvents);
+
+router.post("/:id/complete", protect, completeCodingInterview);
 
 router.delete("/:id", protect, deleteCodingInterview);
 
