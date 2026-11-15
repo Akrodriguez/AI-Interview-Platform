@@ -108,6 +108,36 @@ async function runTests() {
         }, /Failed to parse Gemini response/);
     });
 
+    // 3b. Gemini Fallback Eligibility
+    console.log("\n[3b] Testing isFallbackEligibleGeminiError...");
+    await test("Identifies 429 and 503 as fallback eligible", () => {
+        assert.strictEqual(isFallbackEligibleGeminiError({ status: 429 }), true);
+        assert.strictEqual(isFallbackEligibleGeminiError({ status: 503 }), true);
+    });
+    await test("Identifies quota and rate limit errors as fallback eligible", () => {
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Resource exhausted: quota exceeded")), true);
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Rate limit reached")), true);
+    });
+    await test("Identifies Gemini request timeouts as fallback eligible", () => {
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Gemini request timed out after 30000ms")), true);
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Operation timed out")), true);
+    });
+    await test("Identifies network failures, connection resets, and ECONNREFUSED as fallback eligible", () => {
+        assert.strictEqual(isFallbackEligibleGeminiError(new TypeError("fetch failed")), true);
+        assert.strictEqual(isFallbackEligibleGeminiError({ code: "ECONNRESET", message: "read ECONNRESET" }), true);
+        assert.strictEqual(isFallbackEligibleGeminiError({ code: "ECONNREFUSED", message: "connect ECONNREFUSED 127.0.0.1:443" }), true);
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Network error occurred")), true);
+    });
+    await test("Identifies AbortError as fallback eligible", () => {
+        const abortErr = new Error("The operation was aborted");
+        abortErr.name = "AbortError";
+        assert.strictEqual(isFallbackEligibleGeminiError(abortErr), true);
+    });
+    await test("Does not treat unrelated application/syntax errors as fallback eligible", () => {
+        assert.strictEqual(isFallbackEligibleGeminiError(new TypeError("Cannot read properties of undefined")), false);
+        assert.strictEqual(isFallbackEligibleGeminiError(new Error("Invalid interview parameters")), false);
+    });
+
     // 4. Mock HTTP Server Tests for Ollama
     console.log("\n[4] Testing Ollama HTTP Calls, Timeouts, and Errors with Mock Server...");
 
@@ -163,6 +193,84 @@ async function runTests() {
             const parsed = JSON.parse(result);
             assert.strictEqual(parsed.length, 2);
             assert.strictEqual(parsed[0], "Explain event loop");
+        });
+
+        // Test: Native JSON mode (format: "json" included in request body)
+        await test("generateOllamaContent includes format: 'json' in request payload", async () => {
+            process.env.OLLAMA_BASE_URL = mockBaseUrl;
+            process.env.OLLAMA_MODEL = "llama3.2:1b";
+            process.env.OLLAMA_TIMEOUT_MS = "3000";
+
+            let receivedBody = null;
+            mockHandler = (req, res) => {
+                let body = "";
+                req.on("data", (chunk) => { body += chunk; });
+                req.on("end", () => {
+                    receivedBody = JSON.parse(body);
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({
+                        model: "llama3.2:1b",
+                        response: "{\"valid\": true}",
+                        done: true
+                    }));
+                });
+            };
+
+            const result = await generateOllamaContent("Test prompt");
+            assert.ok(receivedBody, "Server should have received request body");
+            assert.strictEqual(receivedBody.format, "json", "Request payload must specify format: 'json'");
+            assert.strictEqual(receivedBody.model, "llama3.2:1b");
+            assert.strictEqual(receivedBody.stream, false);
+            assert.strictEqual(JSON.parse(result).valid, true);
+        });
+
+        // Test: OLLAMA_AUTH_TOKEN header handling
+        await test("generateOllamaContent sends Authorization header when OLLAMA_AUTH_TOKEN is Basic auth", async () => {
+            process.env.OLLAMA_BASE_URL = mockBaseUrl;
+            process.env.OLLAMA_MODEL = "llama3.2:1b";
+            process.env.OLLAMA_AUTH_TOKEN = "Basic dXNlcjpwYXNz";
+
+            let capturedHeaders = null;
+            mockHandler = (req, res) => {
+                capturedHeaders = req.headers;
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ response: "{\"auth\": true}", done: true }));
+            };
+
+            await generateOllamaContent("Auth test");
+            assert.strictEqual(capturedHeaders["authorization"], "Basic dXNlcjpwYXNz");
+        });
+
+        await test("generateOllamaContent automatically prefixes bare OLLAMA_AUTH_TOKEN with Bearer", async () => {
+            process.env.OLLAMA_BASE_URL = mockBaseUrl;
+            process.env.OLLAMA_MODEL = "llama3.2:1b";
+            process.env.OLLAMA_AUTH_TOKEN = "my-secret-token";
+
+            let capturedHeaders = null;
+            mockHandler = (req, res) => {
+                capturedHeaders = req.headers;
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ response: "{\"auth\": true}", done: true }));
+            };
+
+            await generateOllamaContent("Bearer test");
+            assert.strictEqual(capturedHeaders["authorization"], "Bearer my-secret-token");
+        });
+
+        await test("generateOllamaContent sends NO Authorization header when OLLAMA_AUTH_TOKEN is unset", async () => {
+            process.env.OLLAMA_BASE_URL = mockBaseUrl;
+            process.env.OLLAMA_MODEL = "llama3.2:1b";
+            delete process.env.OLLAMA_AUTH_TOKEN;
+
+            let capturedHeaders = null;
+            mockHandler = (req, res) => {
+                capturedHeaders = req.headers;
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ response: "{\"auth\": false}", done: true }));
+            };
+
+            await generateOllamaContent("No auth test");
+            assert.strictEqual(capturedHeaders["authorization"], undefined);
         });
 
         // Test: Non-200 HTTP status

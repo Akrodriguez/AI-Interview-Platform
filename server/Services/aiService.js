@@ -95,17 +95,30 @@ const isFallbackEliginiError = (error) => {
     const status = Number(error?.status ?? error?.response?.status);
     const code = String(error?.code ?? error?.error?.status ?? "").toUpperCase();
     const message = String(error?.message ?? error?.details ?? "").toLowerCase();
+    const name = String(error?.name ?? "");
 
     return (
         status === 429 ||
         status === 503 ||
         code === "RESOURCE_EXHAUSTED" ||
+        code === "ECONNRESET" ||
+        code === "ECONNREFUSED" ||
+        code === "ETIMEDOUT" ||
+        name === "AbortError" ||
         message.includes("quota") ||
         message.includes("rate limit") ||
         message.includes("resource exhausted") ||
         message.includes("too many requests") ||
         message.includes("not configured") ||
-        message.includes("api key")
+        message.includes("api key") ||
+        message.includes("timed out") ||
+        message.includes("timeout") ||
+        message.includes("fetch failed") ||
+        message.includes("econnreset") ||
+        message.includes("econnrefused") ||
+        message.includes("network error") ||
+        message.includes("networkerror") ||
+        message.includes("aborterror")
     );
 };
 
@@ -136,18 +149,29 @@ const generateOllamaContent = async (prompt) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+    const headers = {
+        "Content-Type": "application/json",
+        // Skip ngrok warning screen when using free ngrok tunnels
+        "ngrok-skip-browser-warning": "true",
+    };
+
+    const authToken = (process.env.OLLAMA_AUTH_TOKEN || "").trim();
+    if (authToken) {
+        headers["Authorization"] =
+            authToken.startsWith("Basic ") || authToken.startsWith("Bearer ")
+                ? authToken
+                : `Bearer ${authToken}`;
+    }
+
     try {
         const response = await fetch(url, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                // Skip ngrok warning screen when using free ngrok tunnels
-                "ngrok-skip-browser-warning": "true",
-            },
+            headers,
             body: JSON.stringify({
                 model,
                 prompt,
                 stream: false,
+                format: "json",
             }),
             signal: controller.signal,
         });
