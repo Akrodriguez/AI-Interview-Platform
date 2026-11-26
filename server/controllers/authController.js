@@ -6,10 +6,6 @@ const registerUser = async (req, res) => {
     try {
         const { name, email, password } = req.body;
 
-        console.log(name);
-        console.log(email);
-        console.log(password);
-
         if (!name || !email || !password) {
             return res.status(400).json({
                 success: false,
@@ -19,8 +15,6 @@ const registerUser = async (req, res) => {
 
         const existingUser = await User.findOne({ email });
 
-        console.log(existingUser);
-
         if (existingUser) {
             return res.status(400).json({
                 success: false,
@@ -29,7 +23,6 @@ const registerUser = async (req, res) => {
         }
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        console.log(hashedPassword);
         const user = await User.create({
             name,
             email,
@@ -49,7 +42,7 @@ const registerUser = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: error.message
+            message: "Server error"
         });
     }
 };
@@ -106,7 +99,7 @@ const loginUser = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: error.message
+            message: "Server error"
         });
     }
 };
