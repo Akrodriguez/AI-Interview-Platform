@@ -10,6 +10,9 @@ import Dashboard from "./pages/Dashboard";
 import CreateInterview from "./pages/CreateInterview";
 import Interview from "./pages/Interview";
 import InterviewResult from "./pages/InterviewResult";
+import CreateCodingInterview from "./pages/CreateCodingInterview";
+import CodingInterview from "./pages/CodingInterview";
+import CodingInterviewResult from "./pages/CodingInterviewResult";
 
 function App() {
     return (
@@ -60,10 +63,39 @@ function App() {
                     }
                 />
 
+                {/* ---- Coding Interview Routes ---- */}
+
+                <Route
+                    path="/create-coding-interview"
+                    element={
+                        <ProtectedRoute>
+                            <CreateCodingInterview />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    path="/coding-interview/:id"
+                    element={
+                        <ProtectedRoute>
+                            <CodingInterview />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    path="/coding-interview/:id/result"
+                    element={
+                        <ProtectedRoute>
+                            <CodingInterviewResult />
+                        </ProtectedRoute>
+                    }
+                />
+
             </Routes>
         </>
     );
 }
 
 
-export default App; 
+export default App;

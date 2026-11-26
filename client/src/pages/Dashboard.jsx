@@ -157,21 +157,26 @@ const buildRecommendationDistribution = (items) => {
 
 const Dashboard = () => {
     const [interviews, setInterviews] = useState([]);
+    const [codingInterviews, setCodingInterviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [plan, setPlan] = useState(null);
     const [planBusy, setPlanBusy] = useState(false);
     const [planError, setPlanError] = useState("");
+    const [activeTab, setActiveTab] = useState("text");
 
     const fetchInterviews = async () => {
         try {
-            const response = await api.get("/interviews");
+            const [textRes, codingRes] = await Promise.all([
+                api.get("/interviews"),
+                api.get("/coding-interviews"),
+            ]);
 
-            setInterviews(response.data.interviews || []);
-        } catch (error) {
+            setInterviews(textRes.data.interviews || []);
+            setCodingInterviews(codingRes.data.codingInterviews || []);
+        } catch (err) {
             setError(
-                error.response?.data?.message ||
-                "Failed to load interviews"
+                err.response?.data?.message || "Failed to load interviews."
             );
         } finally {
             setLoading(false);
@@ -179,8 +184,9 @@ const Dashboard = () => {
     };
 
     useEffect(() => {
-        fetchInterviews();
-    }, []);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchInterviews();
+}, []);
 
     const completedInterviews = (interviews || [])
         .filter((interview) => {
@@ -272,9 +278,11 @@ const Dashboard = () => {
         .slice(0, 3)
         .map(([label, score]) => ({ label, score }));
 
-    const fetchImprovementPlan = async () => {
+    useEffect(() => {
+    const fetchPlan = async () => {
         if (!completedInterviews.length) {
             setPlan(null);
+            setPlanError("");
             return;
         }
 
@@ -295,14 +303,34 @@ const Dashboard = () => {
         }
     };
 
+    fetchPlan();
+}, [completedInterviews.length]);
+
     useEffect(() => {
-        if (completedInterviews.length) {
-            fetchImprovementPlan();
-        } else {
-            setPlan(null);
-            setPlanError("");
+    const fetchPlan = async () => {
+        if (!completedInterviews.length) {
+            return;
         }
-    }, [completedInterviews.length]);
+
+        try {
+            const response = await api.get("/interviews/improvement-plan");
+            setPlan(response.data.plan || null);
+            setPlanError("");
+        } catch (error) {
+            if (error.response?.status === 404) {
+                setPlan(null);
+                return;
+            }
+
+            setPlanError(
+                error.response?.data?.message ||
+                "Unable to load your improvement plan."
+            );
+        }
+    };
+
+    fetchPlan();
+}, [completedInterviews.length]);
 
     const generateImprovementPlan = async () => {
         if (!completedInterviews.length) {
@@ -362,70 +390,96 @@ const Dashboard = () => {
         );
     }
 
+    const LANG_LABELS = {
+        python: "Python 3",
+        javascript: "JavaScript",
+        cpp: "C++",
+    };
+
     return (
         <div className="page-container">
 
             <div className="page-header">
                 <div>
                     <h1>Dashboard</h1>
-
-                    <p>
-                        Practice, evaluate and improve your
-                        interview skills.
-                    </p>
+                    <p>Practice, evaluate and improve your interview skills.</p>
                 </div>
 
-                <Link
-                    to="/create-interview"
-                    className="btn btn-primary"
-                >
-                    + Create Interview
-                </Link>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <Link to="/create-interview" className="btn btn-secondary">
+                        + Text Interview
+                    </Link>
+                    <Link to="/create-coding-interview" className="btn btn-primary">
+                        {"</>"} Coding Interview
+                    </Link>
+                </div>
             </div>
 
             {error && (
-                <div className="error-message">
-                    {error}
-                </div>
+                <div className="error-message">{error}</div>
             )}
 
-            {interviews.length === 0 ? (
-                <div className="empty-state">
-                    <h3>No interviews yet</h3>
-                    <p>
-                        Create your first AI-powered interview
-                        and start practicing.
-                    </p>
-
-                    <Link
-                        to="/create-interview"
-                        className="btn btn-primary"
+            {/* ---- Tab Switcher ---- */}
+            <div style={{
+                display: "flex",
+                gap: "0",
+                marginBottom: "24px",
+                borderBottom: "2px solid #e5e7eb",
+            }}>
+                {[
+                    { key: "text", label: "Text Interviews" },
+                    { key: "coding", label: "Coding Interviews" },
+                ].map((tab) => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        style={{
+                            padding: "10px 20px",
+                            border: "none",
+                            borderBottom: activeTab === tab.key ? "2px solid #4f46e5" : "2px solid transparent",
+                            background: "transparent",
+                            color: activeTab === tab.key ? "#4f46e5" : "#667085",
+                            fontWeight: activeTab === tab.key ? "700" : "500",
+                            fontSize: "15px",
+                            cursor: "pointer",
+                            marginBottom: "-2px",
+                            transition: "0.15s",
+                        }}
                     >
-                        Create Your First Interview
-                    </Link>
-                </div>
-            ) : totalCompleted === 0 ? (
-                <div className="empty-state">
-                    <h3>No completed interviews yet</h3>
-                    <p>
-                        Finish an interview to unlock your analytics, score trend, and performance insights.
-                    </p>
+                        {tab.label}
+                        <span style={{
+                            marginLeft: "8px",
+                            background: activeTab === tab.key ? "#eef2ff" : "#f2f4f7",
+                            color: activeTab === tab.key ? "#4f46e5" : "#475467",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            fontSize: "12px",
+                            fontWeight: "700"
+                        }}>
+                            {tab.key === "text" ? interviews.length : codingInterviews.length}
+                        </span>
+                    </button>
+                ))}
+            </div>
 
-                    <Link
-                        to="/create-interview"
-                        className="btn btn-primary"
-                    >
-                        Start an Interview
-                    </Link>
-                </div>
-            ) : (
+            {/* ---- Text Interviews Tab ---- */}
+            {activeTab === "text" && (
                 <>
-                    <div className="analytics-grid">
-                        <div className="analytics-card">
-                            <span className="analytics-label">Completed interviews</span>
-                            <strong>{totalCompleted}</strong>
+                    {interviews.length === 0 ? (
+                        <div className="empty-state">
+                            <h3>No text interviews yet</h3>
+                            <p>Create your first AI-powered interview and start practicing.</p>
+                            <Link to="/create-interview" className="btn btn-primary">
+                                Create Your First Interview
+                            </Link>
                         </div>
-
+                    ) : (
+                        <>
+                            <div className="analytics-grid">
+                                <div className="analytics-card">
+                                    <span className="analytics-label">Completed interviews</span>
+                                    <strong>{totalCompleted}</strong>
+                                </div>
                         <div className="analytics-card">
                             <span className="analytics-label">Average score</span>
                             <strong>{scoreableInterviews.length ? averageScore.toFixed(1) : "N/A"}</strong>
@@ -698,6 +752,103 @@ const Dashboard = () => {
                             </div>
                         ))}
                     </div>
+                            <div className="interview-grid">
+                                {interviews.map((interview) => (
+                                    <div className="interview-card" key={interview._id}>
+                                    <h3>{interview.role}</h3>
+
+                                    <p>{interview.experience} years experience</p>
+
+                                    <div className="tech-stack">
+                                        {interview.techStack.map((tech, index) => (
+                                            <span className="tech-tag" key={index}>{tech}</span>
+                                        ))}
+                                    </div>
+
+                                    <Link
+                                        to={
+                                            interview.completed
+                                                ? `/interview/${interview._id}/result`
+                                                : `/interview/${interview._id}`
+                                        }
+                                        className="card-link"
+                                    >
+                                        {interview.completed ? "View Result →" : "Open Interview →"}
+                                    </Link>
+                                </div>
+                            ))}
+                        </div>
+                        </>
+                    )}
+                </>
+            )}
+            {/* ---- Coding Interviews Tab ---- */}
+            {activeTab === "coding" && (
+                <>
+                    {codingInterviews.length === 0 ? (
+                        <div className="empty-state">
+                            <h3>No coding interviews yet</h3>
+                            <p>
+                                Start a coding session with a live editor for Python, JavaScript, or C++.
+                            </p>
+                            <Link to="/create-coding-interview" className="btn btn-primary">
+                                Start Your First Coding Interview
+                            </Link>
+                        </div>
+                    ) : (
+                        <div className="interview-grid">
+                            {codingInterviews.map((ci) => (
+                                <div className="interview-card" key={ci._id}>
+
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                                        <span style={{
+                                            background: "#eef2ff",
+                                            color: "#4f46e5",
+                                            padding: "3px 8px",
+                                            borderRadius: "12px",
+                                            fontSize: "11px",
+                                            fontWeight: "700",
+                                        }}>
+                                            {LANG_LABELS[ci.language] || ci.language}
+                                        </span>
+                                        <span style={{
+                                            background: ci.difficulty === "hard" ? "#fef2f2" : ci.difficulty === "medium" ? "#fffbeb" : "#f0fdf4",
+                                            color: ci.difficulty === "hard" ? "#b91c1c" : ci.difficulty === "medium" ? "#b45309" : "#15803d",
+                                            padding: "3px 8px",
+                                            borderRadius: "12px",
+                                            fontSize: "11px",
+                                            fontWeight: "700",
+                                            textTransform: "capitalize"
+                                        }}>
+                                            {ci.difficulty}
+                                        </span>
+                                    </div>
+
+                                    <h3 style={{ fontSize: "17px", marginBottom: "8px" }}>
+                                        {ci.title || "Coding Interview"}
+                                    </h3>
+
+                                    <p style={{ marginBottom: "12px" }}>
+                                        {ci.problems?.length
+                                            ? `${ci.problems.length} problem${ci.problems.length !== 1 ? "s" : ""}`
+                                            : "Not started"}
+                                        {ci.role && ` · ${ci.role}`}
+                                    </p>
+
+                                    <Link
+                                        to={
+                                            ci.completed
+                                                ? `/coding-interview/${ci._id}/result`
+                                                : `/coding-interview/${ci._id}`
+                                        }
+                                        className="card-link"
+                                    >
+                                        {ci.completed ? "View Result →" : "Open Session →"}
+                                    </Link>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </>
             )}
 

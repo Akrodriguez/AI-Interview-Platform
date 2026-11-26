@@ -1,9 +1,11 @@
+
 const express = require("express");
 
 const router = express.Router();
 
 const {
     createInterview,
+    uploadResume,
     createResumeInterview,
     getInterviews,
     getInterviewById,
@@ -20,9 +22,13 @@ const {
 } = require("../controllers/interviewController");
 
 const { protect } = require("../middleware/authMiddleware");
+const { handleResumeUpload } = require("../middleware/uploadMiddleware");
 const { upload } = require("../middleware/upload");
 
-router.post("/", protect, createInterview);
+router.post("/", protect, handleResumeUpload, createInterview);
+
+router.post("/upload-resume", protect, handleResumeUpload, uploadResume);
+
 router.post("/resume", protect, upload.single("resume"), createResumeInterview);
 
 router.get("/", protect, getInterviews);

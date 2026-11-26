@@ -1,10 +1,12 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const interviewRoutes = require("./routes/interviewRoutes");
+const codingInterviewRoutes = require("./routes/codingInterviewRoutes");
 
 const app = express();
 
@@ -15,6 +17,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/interviews", interviewRoutes);
+app.use("/api/coding-interviews", codingInterviewRoutes);
 
 app.get("/", (req, res) => {
     res.send("API is Running");

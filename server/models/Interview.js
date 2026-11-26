@@ -28,6 +28,44 @@ const questionSchema = new mongoose.Schema(
             default: 0,
         },
 
+
+        technicalAccuracy: {
+            type: Number,
+            default: null,
+        },
+
+        completeness: {
+            type: Number,
+            default: null,
+        },
+
+        clarity: {
+            type: Number,
+            default: null,
+        },
+
+        problemSolving: {
+            type: Number,
+            default: null,
+        },
+
+        practicalUnderstanding: {
+            type: Number,
+            default: null,
+        },
+
+        strengths: [
+            {
+                type: String,
+            },
+        ],
+
+        weaknesses: [
+            {
+                type: String,
+            },
+        ],
+
         followUpQuestion: {
             type: String,
             default: "",
@@ -52,6 +90,7 @@ const questionSchema = new mongoose.Schema(
             type: String,
             default: "",
         },
+
     },
     {
         _id: false,
@@ -67,14 +106,31 @@ const interviewSchema = new mongoose.Schema(
             required: true,
         },
 
+        interviewType: {
+            type: String,
+            enum: ["manual", "resume"],
+            default: "manual",
+        },
+
+        resumeText: {
+            type: String,
+            default: "",
+        },
+
+        resumeFileName: {
+            type: String,
+            default: "",
+        },
+
         role: {
             type: String,
             required: true,
+            default: "Software Engineer",
         },
 
         experience: {
             type: Number,
-            required: true,
+            default: 0,
         },
 
         techStack: [

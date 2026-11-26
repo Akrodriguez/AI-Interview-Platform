@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 import api from "../services/api";
 
 const FACE_NO_FACE_ALERT_MS = 5000;
+
+const getCurrentTime = () => Date.now();
+const getPerformanceTime = () => performance.now();
+
 
 const Interview = () => {
     const { id } = useParams();
@@ -16,6 +21,7 @@ const Interview = () => {
     const activeIssueRef = useRef(null);
     const proctoringBufferRef = useRef([]);
     const monitorLoopRef = useRef(null);
+    const monitorFaceRef = useRef(null);
 
     const [interview, setInterview] = useState(null);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -35,6 +41,9 @@ const Interview = () => {
     const [cameraStatus, setCameraStatus] = useState("Camera Disabled");
     const [cameraError, setCameraError] = useState("");
     const [faceStatus, setFaceStatus] = useState("Waiting for camera");
+    const [faceCount, setFaceCount] = useState(null);
+    const [tabSwitchCount, setTabSwitchCount] = useState(0);
+    const [showTabWarning, setShowTabWarning] = useState(false);
     const [alertMessage, setAlertMessage] = useState("");
     const [proctoringEvents, setProctoringEvents] = useState([]);
     const noFaceAlertedRef = useRef(false);
@@ -80,7 +89,7 @@ const Interview = () => {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 await navigator.mediaDevices.getUserMedia({ audio: true });
             }
-        } catch (permissionError) {
+        } catch {
             setVoiceError("Microphone permission was denied. Please allow microphone access and try again.");
             setVoiceStatus("Permission denied");
             return;
@@ -121,16 +130,27 @@ const Interview = () => {
         };
 
         recognition.onerror = (event) => {
-            const errorMessage = event.error === "not-allowed"
-                ? "Microphone access was denied. Please allow microphone permission and try again."
-                : event.error === "no-speech"
-                    ? "No speech was detected. Please try again."
-                    : "Voice recognition encountered an issue. Please try again.";
+        console.error("Speech Recognition Error:", event.error);
+        console.error("Speech Recognition Event:", event);
 
-            setVoiceError(errorMessage);
-            setVoiceStatus("Voice input unavailable");
-            setIsListening(false);
+        const errorMessages = {
+            "not-allowed": "Microphone access denied. Check browser permissions.",
+            "service-not-allowed": "Speech recognition service is blocked.",
+            "no-speech": "No speech detected. Please try again.",
+            "audio-capture": "No microphone detected or microphone unavailable.",
+            "network": "Network error in speech recognition service.",
+            "aborted": "Speech recognition was interrupted.",
+            "language-not-supported": "Selected language is not supported."
         };
+
+        setVoiceError(
+            errorMessages[event.error] ||
+            `Speech recognition error: ${event.error}`
+        );
+
+        setVoiceStatus("Voice input unavailable");
+        setIsListening(false);
+    };
 
         recognition.onend = () => {
             setIsListening(false);
@@ -142,7 +162,7 @@ const Interview = () => {
         recognition.start();
     };
 
-    const addProctoringEvent = (eventType, details = "", duration = 0) => {
+    const addProctoringEvent = useCallback((eventType, details = "", duration = 0) => {
         const event = {
             eventType,
             details,
@@ -161,9 +181,11 @@ const Interview = () => {
             });
             proctoringBufferRef.current = [];
         }
-    };
+    }, [id]);
 
-    const stopCamera = () => {
+    const stopCamera = useCallback(() => {
+        const wasEnabled = Boolean(streamRef.current);
+
         if (monitorLoopRef.current) {
             cancelAnimationFrame(monitorLoopRef.current);
             monitorLoopRef.current = null;
@@ -179,13 +201,17 @@ const Interview = () => {
         }
 
         setCameraEnabled(false);
+        setFaceCount(null);
         setCameraStatus("Camera Disabled");
         setFaceStatus("Camera disabled");
         setAlertMessage("Camera is disabled. Please enable your camera to continue proctoring.");
-        addProctoringEvent("camera_disabled", "Camera turned off during interview.");
-    };
 
-    const setupFaceDetector = async () => {
+        if (wasEnabled) {
+            addProctoringEvent("camera_disabled", "Camera turned off during interview.");
+        }
+    }, [addProctoringEvent]);
+
+    const setupFaceDetector = useCallback(async () => {
         if (detectorRef.current) {
             return;
         }
@@ -203,9 +229,9 @@ const Interview = () => {
             minDetectionConfidence: 0.5,
             minSuppressionThreshold: 0.3,
         });
-    };
+    }, []);
 
-    const startCamera = async () => {
+    const startCamera = useCallback(async () => {
         try {
             setCameraError("");
             setCameraStatus("Starting camera...");
@@ -243,70 +269,89 @@ const Interview = () => {
                 setCameraError(error.message || "Unable to access the camera.");
             }
         }
-    };
+    }, [setupFaceDetector, addProctoringEvent]);
 
-    const monitorFace = async () => {
-        if (!videoRef.current || !detectorRef.current || !cameraEnabled) {
-            return;
-        }
+    const monitorFace = useCallback(async () => {
+    if (!videoRef.current || !detectorRef.current || !cameraEnabled) {
+        return;
+    }
 
-        const video = videoRef.current;
+    const video = videoRef.current;
 
-        if (video.readyState >= 2) {
-            const detectionResult = detectorRef.current.detectForVideo(video, performance.now());
-            const detectionCount = detectionResult?.detections?.length || 0;
+    if (video.readyState >= 2) {
+        const detectionResult = detectorRef.current.detectForVideo(
+            video,
+            getPerformanceTime()
+        );
 
-            if (detectionCount > 1) {
-                if (!multipleFacesAlertedRef.current) {
-                    multipleFacesStartRef.current = Date.now();
-                    activeIssueRef.current = "multiple_faces";
-                    multipleFacesAlertedRef.current = true;
-                    setFaceStatus("Multiple faces detected");
-                    setAlertMessage("Multiple faces detected. Please ensure you are interviewing alone.");
-                    addProctoringEvent("multiple_faces", "More than one face detected in the camera frame.");
-                }
-            } else if (detectionCount === 0) {
-                if (!faceLossStartRef.current) {
-                    faceLossStartRef.current = Date.now();
-                    activeIssueRef.current = "face_not_detected";
-                    setFaceStatus("No face detected");
-                    setAlertMessage("Face not detected. Please stay in front of the camera.");
-                }
+        const detectionCount = detectionResult?.detections?.length || 0;
+        setFaceCount(detectionCount);
 
-                const elapsed = Date.now() - faceLossStartRef.current;
-                if (elapsed >= FACE_NO_FACE_ALERT_MS && !noFaceAlertedRef.current) {
-                    noFaceAlertedRef.current = true;
-                    addProctoringEvent("face_not_detected", `No face detected for ${elapsed} ms.`, elapsed);
-                }
-            } else {
-                if (activeIssueRef.current === "face_not_detected") {
-                    const duration = Date.now() - (faceLossStartRef.current || Date.now());
-                    if (noFaceAlertedRef.current && duration >= FACE_NO_FACE_ALERT_MS) {
-                        addProctoringEvent("face_not_detected", "Face returned after a no-face event.", duration);
-                    }
-                    noFaceAlertedRef.current = false;
-                    faceLossStartRef.current = null;
-                }
+        if (detectionCount > 1) {
+            faceLossStartRef.current = null;
+            noFaceAlertedRef.current = false;
 
-                if (activeIssueRef.current === "multiple_faces") {
-                    const duration = Date.now() - (multipleFacesStartRef.current || Date.now());
-                    if (multipleFacesAlertedRef.current) {
-                        addProctoringEvent("multiple_faces", "Multiple-face condition ended.", duration);
-                    }
-                    multipleFacesAlertedRef.current = false;
-                    multipleFacesStartRef.current = null;
-                }
-
-                activeIssueRef.current = null;
-                setFaceStatus("Face detected");
-                setAlertMessage("");
+            if (!multipleFacesAlertedRef.current) {
+                multipleFacesStartRef.current = getCurrentTime();
+                activeIssueRef.current = "multiple_faces";
+                multipleFacesAlertedRef.current = true;
+                setFaceStatus("Multiple faces detected");
+                setAlertMessage("Multiple faces detected. Please ensure you are interviewing alone.");
+                addProctoringEvent("multiple_faces", "More than one face detected in the camera frame.");
             }
+        } else if (detectionCount === 0) {
+            if (!faceLossStartRef.current) {
+                faceLossStartRef.current = getCurrentTime();
+                activeIssueRef.current = "face_not_detected";
+                setFaceStatus("No face detected");
+                setAlertMessage("Face not detected. Please stay in front of the camera.");
+            }
+
+            const elapsed = getCurrentTime() - faceLossStartRef.current;
+
+            if (elapsed >= FACE_NO_FACE_ALERT_MS && !noFaceAlertedRef.current) {
+                noFaceAlertedRef.current = true;
+                addProctoringEvent("face_not_detected", `No face detected for ${elapsed} ms.`, elapsed);
+            }
+        } else {
+            if (activeIssueRef.current === "face_not_detected") {
+                const duration = getCurrentTime() - (faceLossStartRef.current || getCurrentTime());
+
+                if (noFaceAlertedRef.current && duration >= FACE_NO_FACE_ALERT_MS) {
+                    addProctoringEvent("face_not_detected", "Face returned after a no-face event.", duration);
+                }
+
+                noFaceAlertedRef.current = false;
+                faceLossStartRef.current = null;
+            }
+
+            if (activeIssueRef.current === "multiple_faces") {
+                const duration = getCurrentTime() - (multipleFacesStartRef.current || getCurrentTime());
+
+                if (multipleFacesAlertedRef.current) {
+                    addProctoringEvent("multiple_faces", "Multiple-face condition ended.", duration);
+                }
+
+                multipleFacesAlertedRef.current = false;
+                multipleFacesStartRef.current = null;
+            }
+
+            activeIssueRef.current = null;
+            setFaceStatus("Face detected");
+            setAlertMessage("");
         }
+    }
 
-        monitorLoopRef.current = requestAnimationFrame(monitorFace);
-    };
+    monitorLoopRef.current = requestAnimationFrame(() => {
+        monitorFaceRef.current?.();
+    });
+}, [cameraEnabled, addProctoringEvent]);
 
-    const fetchInterview = async () => {
+useEffect(() => {
+    monitorFaceRef.current = monitorFace;
+}, [monitorFace]);
+
+    const fetchInterview = useCallback(async () => {
         try {
             const response = await api.get(`/interviews/${id}`);
 
@@ -319,34 +364,59 @@ const Interview = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        fetchInterview();
     }, [id]);
 
     useEffect(() => {
-        if (!interview || !interview.questions || interview.questions.length === 0) {
+        fetchInterview();
+    }, [fetchInterview]);
+
+
+    // Request camera stream when the interview loads and cleanup on page leave
+    useEffect(() => {
+        if (interview?.questions?.length > 0) {
+            startCamera();
+        }
+
+        return () => {
+            stopCamera();
+
+            if (detectorRef.current) {
+                try {
+                    detectorRef.current.close();
+                } catch (e) {
+                    console.error("Error closing detector:", e);
+                }
+
+                detectorRef.current = null;
+            }
+
+            if (recognitionRef.current) {
+                try {
+                    recognitionRef.current.stop();
+                } catch (e) {
+                    console.error("Error stopping speech recognition:", e);
+                }
+
+                recognitionRef.current = null;
+            }
+        };
+    }, [interview?._id, interview?.questions?.length, startCamera, stopCamera]);
+
+    // Keep the video element connected to the current camera stream.
+    useEffect(() => {
+        if (cameraEnabled && videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+        }
+    }, [cameraEnabled]);
+
+    // Run the single proctoring face-detection loop while the camera is enabled.
+    useEffect(() => {
+        if (!cameraEnabled) {
+            setFaceCount(null);
             return undefined;
         }
 
-        startCamera();
-
-        return () => {
-            if (monitorLoopRef.current) {
-                cancelAnimationFrame(monitorLoopRef.current);
-            }
-
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach((track) => track.stop());
-            }
-        };
-    }, [interview?._id, interview?.questions?.length]);
-
-    useEffect(() => {
-        if (cameraEnabled && videoRef.current && detectorRef.current) {
-            monitorLoopRef.current = requestAnimationFrame(monitorFace);
-        }
+        monitorLoopRef.current = requestAnimationFrame(monitorFace);
 
         return () => {
             if (monitorLoopRef.current) {
@@ -354,16 +424,33 @@ const Interview = () => {
                 monitorLoopRef.current = null;
             }
         };
-    }, [cameraEnabled]);
+    }, [cameraEnabled, monitorFace]);
 
+    // Reset tab-switch warnings when a new interview loads
     useEffect(() => {
-        return () => {
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-                recognitionRef.current = null;
+        setTabSwitchCount(0);
+        setShowTabWarning(false);
+    }, [interview?._id]);
+
+    // Detect when the active interview tab becomes hidden
+    useEffect(() => {
+        if (!interview?.questions || interview.questions.length === 0) {
+            return;
+        }
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                setTabSwitchCount((prev) => prev + 1);
+                setShowTabWarning(true);
             }
         };
-    }, []);
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+    }, [interview?._id, interview?.questions]);
 
     const generateQuestions = async () => {
         try {
@@ -377,6 +464,8 @@ const Interview = () => {
             setInterview(response.data.interview);
             setCurrentIndex(0);
             setAnswer("");
+            setTabSwitchCount(0);
+            setShowTabWarning(false);
 
         } catch (error) {
             setError(
@@ -492,6 +581,9 @@ const Interview = () => {
             const response = await api.post(
                 `/interviews/${id}/complete`
             );
+
+            // Stop camera before navigation
+            stopCamera();
 
             navigate(`/interview/${id}/result`, {
                 state: {
@@ -624,9 +716,25 @@ const Interview = () => {
                     </p>
                 </div>
 
-                <div className="question-counter">
-                    Question {currentIndex + 1} of{" "}
-                    {interview.questions.length}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    {tabSwitchCount > 0 && (
+                        <span style={{
+                            background: "#fef2f2",
+                            color: "#b91c1c",
+                            border: "1px solid #fecaca",
+                            padding: "4px 10px",
+                            borderRadius: "16px",
+                            fontSize: "12px",
+                            fontWeight: "600"
+                        }}>
+                            ⚠ Tab Switches: {tabSwitchCount}
+                        </span>
+                    )}
+
+                    <div className="question-counter">
+                        Question {currentIndex + 1} of{" "}
+                        {interview.questions.length}
+                    </div>
                 </div>
 
             </div>
@@ -644,98 +752,56 @@ const Interview = () => {
 
             </div>
 
-            <div className="proctoring-layout">
-                <div className="camera-panel">
-                    <div className="camera-header">
-                        <h3>Camera Monitoring</h3>
-                        <span className={cameraEnabled ? "camera-status active" : "camera-status disabled"}>
-                            {cameraStatus}
-                        </span>
-                    </div>
-
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        muted
-                        playsInline
-                        className="camera-video"
-                    />
-
-                    <div className="camera-controls">
-                        <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                if (cameraEnabled) {
-                                    stopCamera();
-                                } else {
-                                    startCamera();
-                                }
-                            }}
-                        >
-                            {cameraEnabled ? "Disable Camera" : "Enable Camera"}
-                        </button>
-                    </div>
-
-                    <div className="camera-meta">
-                        <strong>Face Detection:</strong> {faceStatus}
-                    </div>
-
-                    {cameraError && (
-                        <div className="proctoring-alert error">
-                            {cameraError}
+            <div className="interview-content-grid" style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 320px)",
+                gap: "24px",
+                alignItems: "start"
+            }}>
+                <div className="interview-main-col">
+                    {showTabWarning && tabSwitchCount > 0 && (
+                        <div style={{
+                            marginBottom: "16px",
+                            padding: "12px 16px",
+                            background: "#fef2f2",
+                            border: "1px solid #f87171",
+                            borderRadius: "8px",
+                            color: "#991b1b",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            fontSize: "13px"
+                        }}>
+                            <span><strong>Tab Switch Warning:</strong> You switched tabs or minimized the browser. Please stay on this tab.</span>
+                            <strong>Count: {tabSwitchCount}</strong>
                         </div>
                     )}
 
-                    {alertMessage && (
-                        <div className="proctoring-alert warning">
-                            {alertMessage}
-                        </div>
-                    )}
-                </div>
-
-                <div className="question-panel">
                     <div className="question-card">
                         <span className={`question-label ${isFollowUpQuestion ? "follow-up-label" : ""}`}>
                             {activeQuestionLabel}
                         </span>
-
                         {isFollowUpQuestion && (
-                            <div className="follow-up-banner">
-                                Follow-up based on your previous answer
-                            </div>
+                            <div className="follow-up-banner">Follow-up based on your previous answer</div>
                         )}
-
-                        <h2>
-                            {activeQuestionText}
-                        </h2>
+                        <h2>{activeQuestionText}</h2>
                     </div>
 
                     <div className="answer-section">
                         <div className="answer-header-row">
-                            <label>
-                                {isFollowUpQuestion ? "Your Follow-up Answer" : "Your Answer"}
-                            </label>
-
+                            <label>{isFollowUpQuestion ? "Your Follow-up Answer" : "Your Answer"}</label>
                             <div className="voice-controls">
                                 <button
                                     type="button"
                                     className={`voice-toggle-btn ${isListening ? "recording" : ""}`}
-                                    onClick={() => {
-                                        if (isListening) {
-                                            stopVoiceRecognition();
-                                            return;
-                                        }
-
-                                        startVoiceRecognition();
-                                    }}
+                                    onClick={() => isListening ? stopVoiceRecognition() : startVoiceRecognition()}
                                     disabled={submitting || completing || followUpSubmitting}
                                 >
                                     {isListening ? "Stop" : "🎙️ Mic"}
                                 </button>
                             </div>
                         </div>
-
                         <textarea
                             value={activeAnswerValue}
                             onChange={(e) => activeAnswerSetter(e.target.value)}
@@ -743,63 +809,91 @@ const Interview = () => {
                             rows="10"
                             disabled={submitting || completing || followUpSubmitting}
                         />
-
                         <div className="voice-status-row">
-                            <span className={`voice-status ${isListening ? "active" : ""}`}>
-                                {voiceStatus}
-                            </span>
-                            {voiceError && (
-                                <span className="voice-error">{voiceError}</span>
-                            )}
+                            <span className={`voice-status ${isListening ? "active" : ""}`}>{voiceStatus}</span>
+                            {voiceError && <span className="voice-error">{voiceError}</span>}
                         </div>
                     </div>
+
+                    {error && <div className="error-message">{error}</div>}
+
+                    {proctoringEvents.length > 0 && (
+                        <div className="proctoring-mini-summary">
+                            <strong>Latest observation:</strong> {proctoringEvents[proctoringEvents.length - 1].eventType}
+                        </div>
+                    )}
+
+                    {isFollowUpQuestion ? (
+                        <button className="btn btn-primary" onClick={submitFollowUpAnswer} disabled={followUpSubmitting || completing}>
+                            {followUpSubmitting ? "Submitting Follow-up..." : "Submit Follow-up Answer"}
+                        </button>
+                    ) : !isLastQuestion ? (
+                        <button className="btn btn-primary" onClick={() => submitCurrentAnswer(false)} disabled={submitting || completing}>
+                            {submitting ? "Saving Answer..." : "Submit & Next"}
+                        </button>
+                    ) : (
+                        <button className="btn btn-primary" onClick={() => submitCurrentAnswer(true)} disabled={submitting || completing}>
+                            {completing ? "Generating Report..." : "Finish Interview"}
+                        </button>
+                    )}
                 </div>
+
+                <aside className="interview-camera-col">
+                    <div className="camera-card" style={{
+                        background: "#ffffff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "12px",
+                        padding: "16px",
+                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)"
+                    }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                            <strong>Live Webcam</strong>
+                            <span className={cameraEnabled ? "camera-status active" : "camera-status disabled"}>{cameraStatus}</span>
+                        </div>
+
+                        <div style={{ width: "100%", height: "200px", background: "#0f172a", borderRadius: "8px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: cameraEnabled ? "block" : "none", transform: "scaleX(-1)" }}
+                            />
+                            {cameraEnabled && (
+                                <div style={{ position: "absolute", bottom: "8px", left: "8px", background: faceCount === 1 ? "rgba(22, 163, 74, 0.85)" : faceCount === 0 ? "rgba(220, 38, 38, 0.85)" : faceCount > 1 ? "rgba(217, 119, 6, 0.9)" : "rgba(15, 23, 42, 0.75)", color: "#fff", padding: "4px 10px", borderRadius: "14px", fontSize: "11px", fontWeight: "600" }}>
+                                    {faceCount === 1 ? "Face detected" : faceCount === 0 ? "No face detected" : faceCount > 1 ? "⚠ Multiple faces detected" : "Detecting..."}
+                                </div>
+                            )}
+                            {!cameraEnabled && (
+                                <div style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "14px" }}>
+                                    {cameraError || "Camera is turned off"}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="camera-meta"><strong>Face Detection:</strong> {faceStatus}</div>
+                        {cameraError && <div className="proctoring-alert error">{cameraError}</div>}
+                        {alertMessage && <div className="proctoring-alert warning">{alertMessage}</div>}
+                        {faceCount > 1 && (
+                            <div className="proctoring-alert warning">⚠ Warning: Multiple faces detected in camera feed.</div>
+                        )}
+
+                        <div style={{ marginTop: "10px", padding: "8px 12px", borderRadius: "8px", background: tabSwitchCount > 0 ? "#fef2f2" : "#f8fafc", border: `1px solid ${tabSwitchCount > 0 ? "#fecaca" : "#e2e8f0"}`, display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                            <span>Tab Switches:</span>
+                            <strong>{tabSwitchCount}</strong>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => cameraEnabled ? stopCamera() : startCamera()}
+                            className={`btn ${cameraEnabled ? "btn-secondary" : "btn-primary"}`}
+                            style={{ width: "100%", marginTop: "12px" }}
+                        >
+                            {cameraEnabled ? "Turn Camera Off" : "Turn Camera On"}
+                        </button>
+                    </div>
+                </aside>
             </div>
-
-            {error && (
-                <div className="error-message">
-                    {error}
-                </div>
-            )}
-
-            {proctoringEvents.length > 0 && (
-                <div className="proctoring-mini-summary">
-                    <strong>Latest observation:</strong> {proctoringEvents[proctoringEvents.length - 1].eventType}
-                </div>
-            )}
-
-            {isFollowUpQuestion ? (
-                <button
-                    className="btn btn-primary"
-                    onClick={submitFollowUpAnswer}
-                    disabled={followUpSubmitting || completing}
-                >
-                    {followUpSubmitting
-                        ? "Submitting Follow-up..."
-                        : "Submit Follow-up Answer"}
-                </button>
-            ) : !isLastQuestion ? (
-                <button
-                    className="btn btn-primary"
-                    onClick={() => submitCurrentAnswer(false)}
-                    disabled={submitting || completing}
-                >
-                    {submitting
-                        ? "Saving Answer..."
-                        : "Submit & Next"}
-                </button>
-            ) : (
-                <button
-                    className="btn btn-primary"
-                    onClick={() => submitCurrentAnswer(true)}
-                    disabled={submitting || completing}
-                >
-                    {completing
-                        ? "Generating Report..."
-                        : "Finish Interview"}
-                </button>
-            )}
-
         </div>
     );
 };

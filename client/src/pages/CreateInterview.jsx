@@ -200,6 +200,42 @@ const CreateInterview = () => {
                                 <option value="Advanced">Advanced</option>
                             </select>
                         </div>
+                        {mode === "resume" && (
+                            <div className="form-group">
+                                <label htmlFor="resume">
+                                    Resume (PDF, DOC, or DOCX)
+                                </label>
+
+                                <input
+                                    id="resume"
+                                    type="file"
+                                    accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+
+                                        if (file && file.size > 5 * 1024 * 1024) {
+                                            setError("Resume file size must not exceed 5MB.");
+                                            e.target.value = "";
+                                            setResumeFile(null);
+                                            return;
+                                        }
+
+                                        setError("");
+                                        setResumeFile(file || null);
+                                    }}
+                                />
+
+                                <span className="form-hint">
+                                    Upload your resume to generate personalized interview questions.
+                                </span>
+
+                                {resumeFile && (
+                                    <div className="resume-file-name">
+                                        Selected file: {resumeFile.name}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="form-group">
                             <label htmlFor="questionCount">
@@ -253,39 +289,6 @@ const CreateInterview = () => {
                             </>
                         )}
 
-                        {mode === "resume" && (
-                            <div className="form-group">
-                                <label htmlFor="resume">
-                                    Upload Resume (PDF only)
-                                </label>
-
-                                <input
-                                    id="resume"
-                                    type="file"
-                                    accept="application/pdf"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file && file.size > 5 * 1024 * 1024) {
-                                            setError("Resume must be 5 MB or smaller.");
-                                            setResumeFile(null);
-                                            return;
-                                        }
-                                        setError("");
-                                        setResumeFile(file || null);
-                                    }}
-                                />
-
-                                <span className="form-hint">
-                                    Max file size: 5 MB. The PDF is read on the server and not stored.
-                                </span>
-
-                                {resumeFile && (
-                                    <div className="resume-file-name">
-                                        Selected file: {resumeFile.name}
-                                    </div>
-                                )}
-                            </div>
-                        )}
 
                         <div className="form-actions">
 
